@@ -231,9 +231,8 @@ export async function runAgent(
         // 'project' loads CLAUDE.md from cwd; 'user' loads ~/.claude/skills/ and user settings
         settingSources: ['project', 'user'],
 
-        // Skip all permission prompts — this is a trusted personal bot on your own machine
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        // Permissions handled via .claude/settings.json allow rules
+        // (bypassPermissions blocked when user has sudo access)
 
         // Cap agentic turns to prevent runaway tool-use loops (e.g. retrying
         // stale cookies 40+ times). Configurable via AGENT_MAX_TURNS in .env.
