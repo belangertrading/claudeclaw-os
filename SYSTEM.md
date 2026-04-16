@@ -1,45 +1,31 @@
 # BT Ops — System Architecture
 
-*Last updated: April 16, 2026*
+*Last updated: April 16, 2026 — 3:00 AM EDT*
 
 ## Overview
 
 Belanger Trading runs an autonomous agent operating system built on [ClaudeClaw](https://github.com/earlyaidopters/claudeclaw-os) — a TypeScript wrapper around Anthropic's Claude Agent SDK that turns Claude Code into a persistent Telegram bot with multi-agent orchestration, scheduled tasks, and tool access.
 
-Two parallel systems run on a single Ubuntu VPS:
-- **ClaudeClaw (lean stack)** — Telegram bot, cron scheduler, sub-agents
-- **OpenClaw** — Discord agents, heartbeat, memory system
+**This is the primary system.** OpenClaw is being sunset.
 
 ## Version Matrix
 
 | Component | Version | Notes |
 |-----------|---------|-------|
 | ClaudeClaw | 1.1.0 | `/home/clawdbot/lean-stack` |
-| Claude Agent SDK | 0.2.50 | `@anthropic-ai/claude-agent-sdk` |
-| Claude Code CLI | 2.1.109 | Auth via OAuth (`~/.claude/`) |
-| OpenClaw | 2026.4.14 | `/usr/lib/node_modules/openclaw` |
+| Claude Agent SDK | 0.2.110 | `@anthropic-ai/claude-agent-sdk` |
+| Claude Code CLI | 2.1.110 | Auth via OAuth (`~/.claude/`) |
 | Node.js | 22.22.2 | Engine requirement: >=20 |
 | OS | Ubuntu 24.04 | Linux 6.8.0-107-generic (x64) |
 
 ## Agent Roster
 
-### ClaudeClaw Agents (Telegram)
-
 | Agent | Role | Model | Delivery |
 |-------|------|-------|----------|
 | **Henry** 🎩 | COO / Main | claude-opus-4-6 | Telegram DM |
-| **Hermes** 🔱 | Trading Analyst | claude-opus-4-6 | Telegram (delegated) |
+| **Hermes** 🔱 | Trading Analyst & Research | claude-opus-4-6 | Telegram (delegated) |
 | **Kyle** ✍️ | Head of Marketing | claude-sonnet-4-6 | Telegram (delegated) |
 | **Sloane** 🪞 | Head of Content | claude-sonnet-4-6 | Telegram (delegated) |
-
-### OpenClaw Agents (Discord)
-
-Same agents available on Discord via OpenClaw gateway + claude bridges.
-
-| Agent | Bridge | Plan |
-|-------|--------|------|
-| Henry, Sloane, Ari, Wendy, Kyle | :3456 | Max 20x |
-| Hermes | :3457 | Max 20x |
 
 ## Architecture
 
@@ -61,16 +47,16 @@ Same agents available on Discord via OpenClaw gateway + claude bridges.
 │                                                  │
 │  Cron Scheduler (30 jobs)                        │
 │  Hive Mind (SQLite shared state)                 │
-│  MCP Servers (tools)                             │
+│  Model Fallback: Opus → Sonnet → Haiku           │
+│  Gemini API (embeddings + voice)                 │
 └──────────────────┬──────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────┐
 │              Ubuntu VPS (belangertrading)         │
 │                                                  │
-│  OpenClaw Gateway (Discord agents)                 │
-│  Claude Bridges (:3456, :3457)                   │
 │  XMCP (Twitter API, :8000)                       │
 │  Ops Dashboard (:8888)                           │
+│  BT Ops Dashboard (:3141)                        │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -79,10 +65,17 @@ Same agents available on Discord via OpenClaw gateway + claude bridges.
 | Service | Type | Command |
 |---------|------|---------|
 | bt-ops | systemd | `sudo systemctl {start|stop|restart|status} bt-ops` |
-| openclaw-gateway | systemd | `openclaw gateway {start|stop|restart|status}` |
-| skygem-bridge | systemd | Port 3456, Henry bridge |
-| hermes-bridge | systemd | Port 3457, Hermes bridge |
 | xmcp | systemd | Port 8000, Twitter MCP |
+
+## Model Fallback Chain
+
+Configured via `MODEL_FALLBACK_CHAIN` in `.env`:
+
+```
+Opus (primary) → Sonnet → Haiku
+```
+
+On overload/billing errors, automatically cascades. User gets notified which model it switched to.
 
 ## Cron Jobs (30 total)
 
@@ -100,84 +93,110 @@ Managed by ClaudeClaw's built-in scheduler (not system cron).
 
 Full list: `cat /home/clawdbot/lean-stack/cron/jobs.json`
 
-## Skills (14 installed)
+## Skills
 
-```
-bt-skill-creator    email-reply         frontend-design
-gmail               gogcli              google-calendar
-n8n-workflow        operations-writer   pikastream
-project-manager     references          slack
-timezone            tldr
-```
+**Main (Henry):** 14 skills in `skills/`
+**Hermes:** 28 skills in `agents/hermes/skills/`
+**Sloane:** 11 skills in `agents/sloane/skills/`
+**Kyle:** 5 skills in `agents/kyle/skills/`
 
-Skills live in `/home/clawdbot/lean-stack/skills/` and are loaded by the SDK via `.claude/settings.json`.
+Skills are loaded by the SDK via `.claude/settings.json` and each agent's `CLAUDE.md`.
 
 ## Key Files
 
 | Path | Purpose |
 |------|---------|
-| `/home/clawdbot/lean-stack/` | ClaudeClaw project root |
+| `/home/clawdbot/lean-stack/` | Project root |
 | `src/agent.ts` | Core agent loop (SDK query wrapper) |
 | `src/bot.ts` | Telegram bot handlers |
+| `src/orchestrator.ts` | Sub-agent delegation |
+| `src/scheduler.ts` | Cron job runner |
+| `src/gemini.ts` | Gemini API (embeddings, text gen) |
 | `cron/jobs.json` | Scheduled job definitions |
-| `agents/*/` | Agent configs (CLAUDE.md + agent.yaml) |
-| `skills/*/` | MCP-compatible skill modules |
+| `agents/*/CLAUDE.md` | Agent souls + system prompts |
+| `skills/*/SKILL.md` | Skill definitions |
 | `store/claudeclaw.db` | Session state + hive mind |
 | `.env` | All secrets (gitignored) |
 | `.claude/settings.json` | Tool permissions |
 | `CLAUDE.md` | Henry's system prompt (gitignored) |
-| `/home/clawdbot/clawd/` | OpenClaw workspace (memory, scripts, data) |
-| `/root/.openclaw/` | OpenClaw gateway state |
 
 ## GitHub
 
-- **Repo:** [earlyaidopters/claudeclaw-os](https://github.com/earlyaidopters/claudeclaw-os) (public)
-- **Auth:** `jmbel13` via `gh` CLI (read-only — needs write access added)
+- **Upstream:** [earlyaidopters/claudeclaw-os](https://github.com/earlyaidopters/claudeclaw-os) (public, read-only for jmbel13)
+- **Fork:** [belangertrading/claudeclaw-os](https://github.com/belangertrading/claudeclaw-os) (push access, issues enabled)
+- **Issues:** <https://github.com/belangertrading/claudeclaw-os/issues>
 - **Gitignored:** `.env`, `CLAUDE.md`, `agents/*/agent.yaml`, `agents/*/CLAUDE.md`, `store/`, `dist/`
 
-## Known Issues & Workarounds
+## Auth
 
-### SDK Dual-Result-Event Bug
-The Claude Agent SDK emits two `result` events: `result/success` then `result/error_during_execution` (exit code 1). Fixed in `agent.ts` with `if (!resultText)` guard. Reported to Anthropic (pending).
+Claude Code authenticates via OAuth stored in `~/.claude/.credentials.json`. The service runs as `clawdbot` user.
 
-### Claude Code Exit Code 1
-Claude Code exits with code 1 even on successful completions. The stderr contains "Unexpected non-whitespace character after JSON" — likely ANSI codes in the stream. Mitigated with `NO_COLOR=1`, `TERM=dumb`, `FORCE_COLOR=0` in systemd env.
-
-### GitHub Push Access
-`jmbel13` has read-only access to `earlyaidopters/claudeclaw-os`. Needs collaborator invite or auth switch to push.
-
-## Environment Variables
-
-All secrets in `/home/clawdbot/lean-stack/.env`:
-
+**Known issue:** clawdbot's OAuth token can expire independently of root's. If the bot gets 401 errors, sync credentials:
+```bash
+sudo cp /root/.claude/.credentials.json /home/clawdbot/.claude/.credentials.json
+sudo chown clawdbot:clawdbot /home/clawdbot/.claude/.credentials.json
+sudo chmod 600 /home/clawdbot/.claude/.credentials.json
+sudo systemctl restart bt-ops
 ```
-TELEGRAM_BOT_TOKEN      — Telegram bot auth
-ALLOWED_CHAT_ID          — Josh's Telegram chat ID
-DAShBOARD_TOKEN          — Dashboard auth
-DB_ENCRYPTION_KEY        — SQLite encryption
-AGENT_MAX_TURNS          — Max agentic turns per query
-AGENT_TIMEOUT_MS         — Per-query timeout (ms)
-CONTEXT_LIMIT            — Token context limit
-STREAM_STRATEGY          — Response streaming mode
-SMART_ROUTING_ENABLED    — Model routing toggle
-SMART_ROUTING_CHEAP_MODEL — Cheap model for simple queries
-SHOW_COST_FOOTER         — Cost display toggle
-EXFILTRATION_GUARD_ENABLED — Data leak protection
+
+## Permissions
+
+Tool permissions are managed via `.claude/settings.json` (NOT `--dangerously-skip-permissions`, which is blocked when the user has sudo access). All standard tools are allowed.
+
+## Known Issues & Fixes (April 16)
+
+### 1. SDK Dual-Result-Event (FIXED)
+The SDK emits two `result` events: `success` then `error_during_execution` (exit code 1). Fixed with `if (!resultText)` guard in `agent.ts` catch block — returns captured result instead of throwing.
+
+### 2. bypassPermissions + sudo (FIXED)
+`--dangerously-skip-permissions` is rejected when user has NOPASSWD sudo. Removed from agent.ts. Permissions handled via `.claude/settings.json`.
+
+### 3. OAuth Token Expiry (FIXED, needs automation)
+clawdbot's token expired April 5. Root's was fresh. Copied root → clawdbot. Need automated sync (GitHub issue #2).
+
+### 4. Exit Code 1 on Success
+Claude Code exits with code 1 even on successful completions. Stderr: "Unexpected non-whitespace character after JSON". Mitigated with `NO_COLOR=1`, `TERM=dumb`, `FORCE_COLOR=0` in systemd env. Reported: [anthropics/claude-code#48971](https://github.com/anthropics/claude-code/issues/48971)
+
+## Debugging
+
+**Service logs:**
+```bash
+sudo journalctl -u bt-ops -f              # live
+sudo journalctl -u bt-ops --since '1h ago' # recent
 ```
+
+**SDK debug mode:**
+```bash
+DEBUG_CLAUDE_AGENT_SDK=1 node dist/index.js
+# Writes detailed logs to ~/.claude/debug/
+```
+
+**Dashboard:** `http://localhost:3141` (requires DASHBOARD_TOKEN)
 
 ## Maintenance
 
-**Rebuild after code changes:**
 ```bash
 cd /home/clawdbot/lean-stack
 npm run build
 sudo systemctl restart bt-ops
 ```
 
-**Check logs:**
-```bash
-sudo journalctl -u bt-ops -f              # live
-sudo journalctl -u bt-ops --since '1h ago' # recent
-```
+## Environment Variables
 
-**Dashboard:** `http://localhost:3141` (requires DASHBOARD_TOKEN)
+All secrets in `/home/clawdbot/lean-stack/.env`:
+
+```
+TELEGRAM_BOT_TOKEN       — Telegram bot auth
+ALLOWED_CHAT_ID          — Josh's Telegram chat ID (5851857072)
+DASHBOARD_TOKEN          — Dashboard auth
+DB_ENCRYPTION_KEY        — SQLite encryption
+GOOGLE_API_KEY           — Gemini API (embeddings + voice)
+MODEL_FALLBACK_CHAIN     — Opus → Sonnet → Haiku
+AGENT_MAX_TURNS          — Max agentic turns per query
+AGENT_TIMEOUT_MS         — Per-query timeout
+CONTEXT_LIMIT            — Token context limit
+STREAM_STRATEGY          — Response streaming mode
+SMART_ROUTING_ENABLED    — Model routing toggle
+SMART_ROUTING_CHEAP_MODEL — Cheap model for simple queries
+SHOW_COST_FOOTER         — Cost display toggle
+```
