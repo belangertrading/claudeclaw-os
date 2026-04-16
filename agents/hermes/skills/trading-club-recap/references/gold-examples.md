@@ -1,0 +1,1 @@
+/home/clawdbot/clawd/references/email-voice/gold-standard.md

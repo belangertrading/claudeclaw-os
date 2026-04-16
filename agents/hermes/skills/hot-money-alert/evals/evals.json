@@ -1,0 +1,92 @@
+[
+  {
+    "id": "hmt-sell-uso-oil-spread",
+    "name": "USO Oil Spread — Sell Alert (76% Winner)",
+    "description": "Test: Write an HMT sell alert for USO oil spread. Based on real USO sell alert (Post 4998) that went through 6+ revision rounds. Tests all 10 assertions against the most-failed scenario.",
+    "type": "sell",
+    "service": "hot-money-trader",
+    "input": {
+      "josh_says": "USO is at $111. The call spread we bought is up 76%. Trump spoke last night, strikes continuing 2-3 more weeks. WTI ripped 12% today. Lock it in heading into the 3-day weekend. Sell at $5.27 or current prices.",
+      "trade_details": {
+        "ticker": "USO",
+        "entry_date": "2026-03-20",
+        "entry_price": 2.99,
+        "contract": "USO April 17, 2026 $150/$180 Call Spread",
+        "exit_price": 5.27,
+        "gain_pct": 76,
+        "catalyst": "Iran/Hormuz conflict, Trump address, oil surge"
+      },
+      "sheet_data": {
+        "entry_date": "3/20/2026",
+        "ticker": "USO",
+        "strategy": "Call Spread",
+        "entry_price": 2.99,
+        "strikes": "$150/$180",
+        "type": "C"
+      },
+      "buy_alert_flow": "$3.5 million on 11,000+ contracts at the $155 strike. Average price $3.21. Marines dispatched to Middle East. Strait of Hormuz chokepoint."
+    },
+    "assertions": [
+      {
+        "id": "A1",
+        "name": "No fabricated facts",
+        "check": "Every market claim (oil price, %, timeline, Trump speech details) is verifiable from the input or would require a search. No invented details about what happened overnight or timing claims without verification.",
+        "weight": 3
+      },
+      {
+        "id": "A2",
+        "name": "Trade fully specified",
+        "check": "Every mention of the trade includes the full contract: 'USO April 17, 2026 $150/$180 Call Spread'. Never 'we followed it' or 'the trade is up 76%' without specifying WHICH trade.",
+        "weight": 2
+      },
+      {
+        "id": "A3",
+        "name": "Josh's context preserved",
+        "check": "Josh's color about Trump's address, 3-day weekend urgency, and oil ripping must appear in the draft — not flattened into 'geopolitical tensions continue' or 'oil prices rose.'",
+        "weight": 2
+      },
+      {
+        "id": "A4",
+        "name": "Self-review catches obvious errors",
+        "check": "Draft reads coherently top to bottom. No contradictions (e.g., saying 'two weeks' in one place and '10 days' in another). Title matches body numbers.",
+        "weight": 2
+      },
+      {
+        "id": "A5",
+        "name": "Numbers verified against live data",
+        "check": "Entry price ($2.99), exit price ($5.27), gain (76%), timeline (2 weeks from 3/20 to 4/2) all correct and internally consistent. P&L math: (5.27-2.99)/2.99 = 76.3% ≈ 76%.",
+        "weight": 3
+      },
+      {
+        "id": "A6",
+        "name": "Zero generic filler",
+        "check": "No 'thesis played out bigger than expected', 'fear > reality' without specifics, 'the setup was textbook', 'conditions aligned perfectly'. Every statement backed by a specific fact.",
+        "weight": 2
+      },
+      {
+        "id": "A7",
+        "name": "Short punchy sentences",
+        "check": "No run-on sentences. No paragraphs with 3+ connected ideas. Each paragraph has one job. Read-aloud test passes.",
+        "weight": 1
+      },
+      {
+        "id": "A8",
+        "name": "Correct service voice (HMT)",
+        "check": "Uses HMT language: flow dollar amounts, 'Here's what caught my attention' or similar, conviction tone. Does NOT use OI phrases ('What This Trade Looks Like', pattern names) or 48HC phrases (insurance analogies, 'patience and probabilities').",
+        "weight": 2
+      },
+      {
+        "id": "A9",
+        "name": "Max 2 revision cycles",
+        "check": "Draft quality is high enough that it would need 0-1 corrections from Josh, not 6+. This is a meta-assertion — judged by overall polish.",
+        "weight": 1
+      },
+      {
+        "id": "A10",
+        "name": "Record matches sheet",
+        "check": "If any W-L record is referenced, it must match actual sheet data. If not referenced, that's acceptable for a sell alert. No fabricated running records.",
+        "weight": 1
+      }
+    ]
+  }
+]

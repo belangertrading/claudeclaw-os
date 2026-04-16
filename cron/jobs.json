@@ -1,0 +1,243 @@
+[
+  {
+    "id": "morning-brief",
+    "name": "Morning Brief",
+    "schedule": "0 9 * * 1-5",
+    "agent": "hermes",
+    "prompt": "Deliver the Morning Brief. Check alert sheets for open positions first. Then: market futures, key earnings/events today, any overnight news. Keep it tight \u2014 5 bullet points max.",
+    "enabled": true
+  },
+  {
+    "id": "flow-scan-10am",
+    "name": "Flow Scan 10AM",
+    "schedule": "0 10 * * 1-5",
+    "agent": "hermes",
+    "prompt": "Run flow scan. Check for unusual options activity and report anything notable.",
+    "enabled": true
+  },
+  {
+    "id": "flow-scan-12pm",
+    "name": "Flow Scan 12PM",
+    "schedule": "0 12 * * 1-5",
+    "agent": "hermes",
+    "prompt": "Run midday flow scan. Check for unusual options activity and report anything notable.",
+    "enabled": true
+  },
+  {
+    "id": "flow-scan-4pm",
+    "name": "Flow Scan 4PM",
+    "schedule": "0 16 * * 1-5",
+    "agent": "hermes",
+    "prompt": "Run closing flow scan. Check for unusual options activity and report anything notable.",
+    "enabled": true
+  },
+  {
+    "id": "daily-content",
+    "name": "Daily Content Draft",
+    "schedule": "0 8 * * 1-5",
+    "agent": "sloane",
+    "prompt": "Generate today's content batch. Check calendar for hooks, review what performed well recently, draft social posts for Josh to approve.",
+    "enabled": true
+  },
+  {
+    "id": "x-scanner-morning",
+    "name": "X Scanner Morning",
+    "schedule": "0 7 * * *",
+    "agent": "sloane",
+    "prompt": "Morning scan for viral trading/finance content on X. Focus on engagement patterns and opportunities.",
+    "enabled": true
+  },
+  {
+    "id": "x-scanner-midday",
+    "name": "X Scanner Midday",
+    "schedule": "0 12 * * *",
+    "agent": "sloane",
+    "prompt": "Midday scan for viral trading/finance content on X. Check what's trending and flag opportunities.",
+    "enabled": true
+  },
+  {
+    "id": "analytics-collect",
+    "name": "Analytics Collect",
+    "schedule": "0 7 * * 1-5",
+    "agent": "sloane",
+    "prompt": "Collect daily analytics: Substack stats, social media metrics, notable engagement patterns.",
+    "enabled": true
+  },
+  {
+    "id": "email-spy-ingest",
+    "name": "Competitor Email Ingest",
+    "schedule": "0 7 * * 1-5",
+    "agent": "kyle",
+    "prompt": "Run competitor email intelligence ingest. Check beljay99@gmail.com (spy account) for new competitor newsletters and marketing emails.",
+    "enabled": true
+  },
+  {
+    "id": "email-spy-report",
+    "name": "Competitor Intel Report",
+    "schedule": "0 8 * * 1-5",
+    "agent": "kyle",
+    "prompt": "Generate morning competitor intelligence briefing from yesterday's ingested emails.",
+    "enabled": true
+  },
+  {
+    "id": "weekly-damage-report",
+    "name": "Weekly Damage Report",
+    "schedule": "0 16 * * 5",
+    "agent": "hermes",
+    "prompt": "Generate the weekly P&L and trade review across all alert services.",
+    "enabled": true
+  },
+  {
+    "id": "trading-club-recap",
+    "name": "Trading Club Recap",
+    "schedule": "0 17 * * 3",
+    "agent": "hermes",
+    "prompt": "Generate recap of this week's Trading Club session.",
+    "enabled": true
+  },
+  {
+    "id": "trading-club-reminder-dayof",
+    "name": "Trading Club Reminder (Day-of)",
+    "schedule": "0 9 * * 3",
+    "agent": "hermes",
+    "prompt": "Wednesday 9 AM \u2014 Trading Club day. Send reminder to members about today's session.",
+    "enabled": true
+  },
+  {
+    "id": "porter-pdf-monitor",
+    "name": "Porter & Co PDF Monitor",
+    "schedule": "0 9 * * 2,4",
+    "agent": "hermes",
+    "prompt": "Check beljay99@gmail.com for new Porter & Co PDF research reports. Convert any new PDFs to markdown.",
+    "enabled": true
+  },
+  {
+    "id": "instagram-refresh",
+    "name": "Instagram Token Refresh",
+    "schedule": "0 3 1,15 * *",
+    "agent": "main",
+    "prompt": "Refresh the Instagram access token. Run scripts/refresh-ig-token.sh and verify.",
+    "enabled": true
+  },
+  {
+    "id": "threads-refresh",
+    "name": "Threads Token Refresh",
+    "schedule": "0 3 8,22 * *",
+    "agent": "main",
+    "prompt": "Refresh the Threads access token. Run scripts/refresh-threads-token.sh and verify.",
+    "enabled": true
+  },
+  {
+    "id": "memory-checkpoint",
+    "name": "Memory Checkpoint",
+    "schedule": "0 */4 * * *",
+    "agent": "main",
+    "prompt": "Quick memory checkpoint. Review today's memory file and promote any durable lessons.",
+    "enabled": true
+  },
+  {
+    "id": "reflect-promote",
+    "name": "Reflect & Promote",
+    "schedule": "0 */6 * * *",
+    "agent": "main",
+    "prompt": "Review memory files for [REFLECT] entries and promote lasting lessons to long-term memory.",
+    "enabled": true
+  },
+  {
+    "id": "dmarc-monitor",
+    "name": "DMARC Weekly Monitor",
+    "schedule": "0 10 * * 1",
+    "agent": "main",
+    "prompt": "Check DMARC reports for joshbelanger.com. Flag any authentication failures.",
+    "enabled": true
+  },
+  {
+    "id": "weekly-cleanup",
+    "name": "Weekly Workspace Cleanup",
+    "schedule": "0 9 * * 0",
+    "agent": "main",
+    "prompt": "Weekly workspace cleanup: find temp files, check disk usage, clean old logs.",
+    "enabled": true
+  },
+  {
+    "id": "biweekly-disk-cleanup",
+    "name": "Bi-weekly Disk Cleanup",
+    "schedule": "0 3 1,15 * *",
+    "agent": "main",
+    "prompt": "Run disk cleanup: find large files, clear old logs, check /tmp, remove stale caches.",
+    "enabled": true
+  },
+  {
+    "id": "vps-backup",
+    "name": "VPS Full Backup",
+    "schedule": "0 4 * * 0",
+    "agent": "main",
+    "prompt": "Run full VPS backup to Google Drive. Execute scripts/backup-to-gdrive.sh.",
+    "enabled": true
+  },
+  {
+    "id": "cron-health",
+    "name": "Cron Failure Monitor",
+    "schedule": "0 8 * * *",
+    "agent": "main",
+    "prompt": "Check cron job health. Review recent runs for failures and report any issues.",
+    "enabled": true
+  },
+  {
+    "id": "saturday-checkin",
+    "name": "Saturday Check-in",
+    "schedule": "0 10 * * 6",
+    "agent": "main",
+    "prompt": "Saturday check-in. Review the week: what shipped, what's blocked, what needs attention next week.",
+    "enabled": true
+  },
+  {
+    "id": "activity-log",
+    "name": "Activity Log Catchup",
+    "schedule": "30 23 * * *",
+    "agent": "main",
+    "prompt": "Review today's activity and ensure the activity log is current.",
+    "enabled": true
+  },
+  {
+    "id": "monthly-security",
+    "name": "Monthly Security Audit",
+    "schedule": "0 10 1 * *",
+    "agent": "main",
+    "prompt": "Run monthly security audit: check for exposed credentials, review file permissions, audit access.",
+    "enabled": true
+  },
+  {
+    "id": "quarterly-deep-clean",
+    "name": "Quarterly Deep Clean",
+    "schedule": "0 10 1 1,4,7,10 *",
+    "agent": "main",
+    "prompt": "Quarterly deep clean: archive old memory files (>90 days), consolidate long-term memory, prune stale data.",
+    "enabled": true
+  },
+  {
+    "id": "skill-updates",
+    "name": "Skill Updates Check",
+    "schedule": "0 6 * * 1",
+    "agent": "main",
+    "prompt": "Check if any skills need updating. Review skills directory for outdated instructions.",
+    "enabled": true
+  },
+  {
+    "id": "hermes-cleanup-reminder",
+    "name": "Hermes Agent Cleanup Reminder",
+    "schedule": "0 10 22 4 *",
+    "agent": "main",
+    "prompt": "REMINDER: One week since the Hermes Agent framework was decommissioned (Apr 15). Old install still at /root/.hermes/. Everything was ported to the lean stack. Keep or delete?",
+    "enabled": true,
+    "oneshot": true
+  },
+  {
+    "id": "trading-club-reminder-eve",
+    "name": "Trading Club Reminder (Eve)",
+    "schedule": "0 11 * * 2",
+    "agent": "hermes",
+    "prompt": "Tuesday 11 AM \u2014 Trading Club reminder day. Send a reminder to subscribers that tomorrow (Wednesday) is Trading Club day. Keep it short and friendly.",
+    "enabled": true
+  }
+]

@@ -1,0 +1,39 @@
+[
+  {
+    "date": "2026-02-03",
+    "title": "Systems don't have feelings :(",
+    "ticker": "JPM",
+    "tension": "system vs self — system says exit, feelings say hold",
+    "length": "~300 words",
+    "published": true,
+    "gated": false
+  },
+  {
+    "date": "2026-01-16",
+    "title": "The Biggest Hypocrite on the Call",
+    "ticker": "MU",
+    "tension": "sold too early — preaching patience, not practicing it",
+    "length": "~400 words",
+    "published": true,
+    "gated": false
+  },
+  {
+    "date": "2026-02-19",
+    "title": "The $80,000 Cancelled Trade",
+    "ticker": "KNTK",
+    "tension": "near-miss on massive win — takeover happened, he cancelled the trade",
+    "length": "~400 words",
+    "published": true,
+    "gated": false
+  },
+  {
+    "date": "2026-03-04",
+    "title": "Right thesis. Wrong timing. -$8,300.",
+    "ticker": "MGM",
+    "tension": "right on direction, wrong on timing — $8,300 loss, stock moved his way after exit",
+    "length": "~350 words",
+    "published": true,
+    "gated": false,
+    "notes": "Multiple drafts. V1-V3 were AI drafts (too clean). V4 was Josh's edit — messy, three-step sell decision. Bridge/hook framework first used here."
+  }
+]

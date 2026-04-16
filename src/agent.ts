@@ -373,6 +373,16 @@ export async function runAgent(
       return { text: null, newSessionId, usage, aborted: true };
     }
 
+    // Claude Code exits with code 1 even on success (known SDK bug).
+    // If we already captured a valid result, return it instead of crashing.
+    if (resultText) {
+      logger.warn(
+        { originalMsg: (err as Error)?.message },
+        'SDK threw after successful result — returning captured result (exit code 1 bug)',
+      );
+      return { text: resultText, newSessionId, usage };
+    }
+
     // Classify the error and attach context-aware metadata
     const contextTokens = lastCallInputTokens || lastCallCacheRead || 0;
     const classified = classifyError(err, contextTokens || undefined);

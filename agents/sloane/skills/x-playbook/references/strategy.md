@@ -1,0 +1,1 @@
+/home/clawdbot/sloane/training/x-strategy-rough.md

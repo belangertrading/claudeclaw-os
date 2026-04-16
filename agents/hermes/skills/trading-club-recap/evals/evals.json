@@ -1,0 +1,63 @@
+{
+  "skill_name": "trading-club-recap",
+  "evals": [
+    {
+      "id": 1,
+      "name": "mar26-recap",
+      "prompt": "Write a Trading Club recap email for this week's session. The transcript is at /home/clawdbot/clawd/data/zoom-transcripts/2026-03-26-trading-club.vtt. Read the voice references at /home/clawdbot/clawd/references/email-voice/voice-dna.md and /home/clawdbot/clawd/references/email-voice/gold-standard.md before drafting. Output ONLY the plain text email body (no HTML, no subject line header). The email should be ready to send to Trading Club members.",
+      "expected_output": "A recap email in Josh's voice covering COST/WMT bull surge triggers, SIG bear plunge, Karan's SPX iron condor, Ed's URA call spread restructuring, and broken wing butterflies. Should open with session context, include market analysis, use 'we' framing, include strikes, no member names in attendance context.",
+      "files": ["/home/clawdbot/clawd/data/zoom-transcripts/2026-03-26-trading-club.vtt"],
+      "gold_standard": "/home/clawdbot/clawd/trading-club-recap-workspace/gold-standard-mar26.txt",
+      "assertions": [
+        {"id": "context-intro", "text": "Opens with context establishing this is a Trading Club session recap (not jumping straight into market data)", "type": "qualitative"},
+        {"id": "market-analysis", "text": "Includes Josh's market regime analysis before diving into individual trades", "type": "qualitative"},
+        {"id": "no-member-names", "text": "Does NOT use member names (Karan, Ed) in attendance context like 'Karan brought' or 'Ed showed up'. May reference members only when discussing their specific trades in educational context.", "type": "binary"},
+        {"id": "includes-strikes", "text": "Includes specific strike prices, expirations, and premium amounts for trades discussed", "type": "binary"},
+        {"id": "educational-framing", "text": "Uses educational framing ('what I'd like to see', 'if I were doing this') not directive framing ('the problem is', 'you should')", "type": "qualitative"},
+        {"id": "we-not-you", "text": "Uses 'we're' / 'I'm' / 'we' instead of 'you're' / 'you' when discussing trading principles and service trades", "type": "binary"},
+        {"id": "no-attendance", "text": "Does NOT mention who attended, who was late, who missed, or attendance details", "type": "binary"},
+        {"id": "no-personal-details", "text": "Does NOT include personal/travel/social details, food discussions, or inside jokes", "type": "binary"},
+        {"id": "voice-match", "text": "Matches Josh's email voice: short paragraphs, em-dashes, fragments for emphasis, no corporate language, no hedging", "type": "qualitative"},
+        {"id": "sign-off", "text": "Ends with casual sign-off like 'Same time next week' or 'Same time next Thursday' followed by '-Josh'", "type": "binary"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "apr02-recap",
+      "prompt": "Write a Trading Club recap email for this week's session. The transcript is at /home/clawdbot/clawd/data/zoom-transcripts/2026-04-02-trading-club.vtt. Read the voice references at /home/clawdbot/clawd/references/email-voice/voice-dna.md and /home/clawdbot/clawd/references/email-voice/gold-standard.md before drafting. Output ONLY the plain text email body (no HTML, no subject line header). The email should be ready to send to Trading Club members.",
+      "expected_output": "A recap email covering SNDK bear call spread (785/795, risk/reward critique), SPY bear put spread (650/615, fast market lesson), USO close-out, and market regime analysis. Educational framing throughout, no names, 'we' not 'you'.",
+      "files": ["/home/clawdbot/clawd/data/zoom-transcripts/2026-04-02-trading-club.vtt"],
+      "gold_standard": "/home/clawdbot/clawd/trading-club-recap-workspace/gold-standard-apr02.txt",
+      "assertions": [
+        {"id": "context-intro", "text": "Opens with context establishing this is a Trading Club session recap", "type": "qualitative"},
+        {"id": "market-analysis", "text": "Includes market regime analysis (bear market, volatile, S&P level, VIX, oil) before individual trades", "type": "qualitative"},
+        {"id": "no-member-names", "text": "Does NOT use member names in trade descriptions. Uses 'First trade we covered' not 'Karan brought'", "type": "binary"},
+        {"id": "includes-strikes", "text": "Includes SNDK 785/795 strikes and SPY 650/615 strikes with premium amounts", "type": "binary"},
+        {"id": "educational-framing", "text": "Uses educational framing for trade critiques, not directive advice", "type": "qualitative"},
+        {"id": "we-not-you", "text": "Uses 'we're' / 'we' framing, not 'you're' / 'you' for trading principles", "type": "binary"},
+        {"id": "collective-service-trades", "text": "References service trades as 'we closed' not 'I closed'", "type": "binary"},
+        {"id": "no-attendance", "text": "Does NOT mention attendance details", "type": "binary"},
+        {"id": "no-personal-details", "text": "Does NOT include the legal discussion, food chat, or other non-trading content from the session", "type": "binary"},
+        {"id": "sign-off", "text": "Ends with casual sign-off + '-Josh'", "type": "binary"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "mar19-open-house",
+      "prompt": "Write a Trading Club recap email for this week's session. This was an open house week. The transcript is at /home/clawdbot/clawd/data/zoom-transcripts/2026-03-19-trading-club-open-house.vtt. Read the voice references at /home/clawdbot/clawd/references/email-voice/voice-dna.md and /home/clawdbot/clawd/references/email-voice/gold-standard.md before drafting. Output ONLY the plain text email body (no HTML, no subject line header). The email should be ready to send to Trading Club members.",
+      "expected_output": "A recap covering an open house session. Same rules apply: session context opener, market analysis, no names, strikes included, educational framing, 'we' not 'you'.",
+      "files": ["/home/clawdbot/clawd/data/zoom-transcripts/2026-03-19-trading-club-open-house.vtt"],
+      "assertions": [
+        {"id": "context-intro", "text": "Opens with context establishing this is a Trading Club session recap", "type": "qualitative"},
+        {"id": "market-analysis", "text": "Includes market analysis/context before individual trades", "type": "qualitative"},
+        {"id": "no-member-names", "text": "Does NOT use member names in attendance or trade introduction context", "type": "binary"},
+        {"id": "includes-strikes", "text": "Includes specific strikes/expirations for trades discussed", "type": "binary"},
+        {"id": "educational-framing", "text": "Educational framing throughout", "type": "qualitative"},
+        {"id": "we-not-you", "text": "Uses 'we' framing not 'you' framing", "type": "binary"},
+        {"id": "no-attendance", "text": "Does NOT mention attendance details", "type": "binary"},
+        {"id": "no-personal-details", "text": "No personal/social details", "type": "binary"},
+        {"id": "sign-off", "text": "Casual sign-off + '-Josh'", "type": "binary"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "skill_name": "head-of-x",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write me a reply to this: https://x.com/KobeissiLetter/status/example — 'The Fed just paused rates again. Markets are confused.' 15K likes, 2K replies.",
+      "expected_output": "A 2-4 sentence reply with Hook/Body/Punch structure. Uses Josh's experience, no credential announcing, takes a side with conviction. Plain text, ready to paste."
+    },
+    {
+      "id": 2,
+      "prompt": "What's trending on FinTwit worth replying to this morning?",
+      "expected_output": "3-5 posts with links, engagement stats, and one-sentence angles. Formatted per scanner output spec. Posts filtered for relevance, reply opportunity, and audience overlap."
+    },
+    {
+      "id": 3,
+      "prompt": "Quote tweet this: someone posted 'Options trading is just gambling with extra steps' and it's going viral with 50K likes.",
+      "expected_output": "A quote tweet with conviction — not agreeing, not dismissing, using Josh's experience to reframe. Hook/Body/Punch, no credential announcing, no hedging. Ready to copy."
+    }
+  ]
+}
