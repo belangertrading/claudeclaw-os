@@ -585,7 +585,11 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
       abortCtrl,
       onStreamText,
       (attempt, error) => {
-        void ctx.reply(`${error.recovery.userMessage} (retry ${attempt}/${2})`).catch(() => {});
+        const fallbackModel = error.recovery.shouldSwitchModel && MODEL_FALLBACK_CHAIN.length > 0
+          ? MODEL_FALLBACK_CHAIN[Math.min(attempt - 1, MODEL_FALLBACK_CHAIN.length - 1)]
+          : null;
+        const modelNote = fallbackModel ? ` ⚡ Switching to ${fallbackModel}` : '';
+        void ctx.reply(`${error.recovery.userMessage}${modelNote} (retry ${attempt}/2)`).catch(() => {});
       },
       MODEL_FALLBACK_CHAIN.length > 0 ? MODEL_FALLBACK_CHAIN : undefined,
       agentMcpAllowlist,
