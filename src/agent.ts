@@ -219,7 +219,7 @@ export async function runAgent(
     const mcpServerSpecs = mcpServerNames.length > 0 ? mcpServers : undefined;
 
     for await (const event of query({
-      prompt: singleTurn(message),
+      prompt: message,
       options: {
         // cwd = agent directory (if running as agent) or project root.
         // Claude Code loads CLAUDE.md from cwd via settingSources: ['project'].
@@ -333,7 +333,7 @@ export async function runAgent(
       }
 
       if (ev['type'] === 'result') {
-        resultText = (ev['result'] as string | null | undefined) ?? null;
+        if (!resultText) resultText = (ev['result'] as string | null | undefined) ?? null;
 
         // Extract usage info from result event
         const evUsage = ev['usage'] as Record<string, number> | undefined;
