@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 
 import fs from 'fs';
 import path from 'path';
-import { AGENT_ID, ALLOWED_CHAT_ID, DASHBOARD_PORT, DASHBOARD_TOKEN, PROJECT_ROOT, STORE_DIR, WHATSAPP_ENABLED, SLACK_USER_TOKEN, CONTEXT_LIMIT, agentDefaultModel } from './config.js';
+import { AGENT_ID, ALLOWED_CHAT_ID, DASHBOARD_PORT, DASHBOARD_TOKEN, MESSENGER_TYPE, PROJECT_ROOT, STORE_DIR, WHATSAPP_ENABLED, SLACK_USER_TOKEN, CONTEXT_LIMIT, agentDefaultModel } from './config.js';
 import crypto from 'crypto';
 import {
   getAllScheduledTasks,
@@ -35,6 +35,7 @@ import {
   deleteMissionTask,
   reassignMissionTask,
   assignMissionTask,
+  updateMissionTaskTimeout,
   getUnassignedMissionTasks,
   getMissionTaskHistory,
   getAuditLog,
@@ -52,7 +53,14 @@ import {
 } from './db.js';
 import { generateContent, parseJsonResponse } from './gemini.js';
 import { getSecurityStatus } from './security.js';
-import { listAgentIds, loadAgentConfig, setAgentModel } from './agent-config.js';
+import {
+  listAgentIds,
+  loadAgentConfig,
+  setAgentModel,
+  setAgentDescription,
+  getMainDescription,
+  setMainDescription,
+} from './agent-config.js';
 import {
   listTemplates,
   validateAgentId,
@@ -65,12 +73,12 @@ import {
   suggestBotNames,
   isAgentRunning,
 } from './agent-create.js';
-import { processMessageFromDashboard } from './bot.js';
+import { dispatchDashboardChatToAgent, processMessageFromDashboard } from './bot.js';
 import { getDashboardHtml } from './dashboard-html.js';
 import { getWarRoomHtml } from './warroom-html.js';
 import { WARROOM_ENABLED, WARROOM_PORT } from './config.js';
 import { logger } from './logger.js';
-import { getTelegramConnected, getBotInfo, chatEvents, getIsProcessing, abortActiveQuery, ChatEvent } from './state.js';
+import { getTelegramConnected, getBotInfo, chatEvents, getIsProcessing, abortActiveQuery, ChatEvent, readAgentConnState } from './state.js';
 
 async function classifyTaskAgent(prompt: string): Promise<string | null> {
   try {
@@ -276,11 +284,12 @@ export function startDashboard(botApi?: Api<RawApi>): void {
     const ids = ['main', ...listAgentIds().filter((id) => id !== 'main')];
     const agents = ids.map((id) => {
       try {
-        if (id === 'main') return { id: 'main', name: 'Main', description: 'General ops and triage' };
         const cfg = loadAgentConfig(id);
         return { id, name: cfg.name || id, description: cfg.description || '' };
       } catch {
-        return { id, name: id, description: '' };
+        // No agent.yaml — use a capitalised fallback (e.g. "main" → "Main")
+        const fallbackName = id.charAt(0).toUpperCase() + id.slice(1);
+        return { id, name: fallbackName, description: '' };
       }
     });
     return c.json({ agents });
@@ -666,12 +675,14 @@ export function startDashboard(botApi?: Api<RawApi>): void {
       prompt?: string;
       assigned_agent?: string;
       priority?: number;
+      timeout_ms?: number;
     }>();
 
     const title = body?.title?.trim();
     const prompt = body?.prompt?.trim();
     const assignedAgent = body?.assigned_agent?.trim() || null;
     const priority = Math.max(0, Math.min(10, body?.priority ?? 0));
+    const timeoutMs = body?.timeout_ms ? Math.max(60_000, body.timeout_ms) : null;
 
     if (!title || title.length > 200) return c.json({ error: 'title required (max 200 chars)' }, 400);
     if (!prompt || prompt.length > 10000) return c.json({ error: 'prompt required (max 10000 chars)' }, 400);
@@ -685,7 +696,7 @@ export function startDashboard(botApi?: Api<RawApi>): void {
     }
 
     const id = crypto.randomBytes(4).toString('hex');
-    createMissionTask(id, title, prompt, assignedAgent, 'dashboard', priority);
+    createMissionTask(id, title, prompt, assignedAgent, 'dashboard', priority, timeoutMs);
 
     const task = getMissionTask(id);
     return c.json({ task }, 201);
@@ -728,7 +739,20 @@ export function startDashboard(botApi?: Api<RawApi>): void {
 
   app.patch('/api/mission/tasks/:id', async (c) => {
     const id = c.req.param('id');
-    const body = await c.req.json<{ assigned_agent?: string }>();
+    const body = await c.req.json<{ assigned_agent?: string; timeout_ms?: number }>();
+
+    if (body?.timeout_ms !== undefined) {
+      const task = getMissionTask(id);
+      if (!task) return c.json({ error: 'Not found' }, 404);
+      if (['completed', 'failed', 'cancelled'].includes(task.status)) {
+        return c.json({ error: 'Cannot change timeout on a finished task' }, 422);
+      }
+      const newTimeout = Math.max(60_000, body.timeout_ms);
+      const changed = updateMissionTaskTimeout(id, newTimeout);
+      if (!changed) return c.json({ error: 'Task is no longer running' }, 422);
+      if (!body?.assigned_agent) return c.json({ ok: true, timeout_ms: newTimeout });
+    }
+
     const newAgent = body?.assigned_agent?.trim();
     if (!newAgent) return c.json({ error: 'assigned_agent required' }, 400);
     const validAgents = ['main', ...listAgentIds()];
@@ -960,6 +984,9 @@ export function startDashboard(botApi?: Api<RawApi>): void {
       compactions,
       sessionAge,
       model: agentDefaultModel || 'sonnet-4-6',
+      messengerType: MESSENGER_TYPE,
+      messengerConnected: getTelegramConnected(),
+      // Back-compat alias — pre-Signal clients still read telegramConnected.
       telegramConnected: getTelegramConnected(),
       waConnected: WHATSAPP_ENABLED,
       slackConnected: !!SLACK_USER_TOKEN,
@@ -989,14 +1016,53 @@ export function startDashboard(botApi?: Api<RawApi>): void {
 
   // ── Agent endpoints ──────────────────────────────────────────────────
 
+  const agentOrderFile = path.join(STORE_DIR, 'agent-order.json');
+  const loadAgentOrder = (): string[] => {
+    try {
+      const raw = fs.readFileSync(agentOrderFile, 'utf-8');
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+    } catch { return []; }
+  };
+  const saveAgentOrder = (order: string[]) => {
+    fs.writeFileSync(agentOrderFile, JSON.stringify(order, null, 2));
+  };
+  const applyAgentOrder = (ids: string[]): string[] => {
+    const saved = loadAgentOrder();
+    const present = new Set(ids);
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    for (const id of saved) {
+      if (present.has(id) && !seen.has(id)) { ordered.push(id); seen.add(id); }
+    }
+    for (const id of ids) {
+      if (!seen.has(id)) { ordered.push(id); seen.add(id); }
+    }
+    return ordered;
+  };
+
+  // Persist the visual order of secondary agents (main is always pinned first)
+  app.post('/api/agents/order', async (c) => {
+    const body = await c.req.json<{ order?: string[] }>();
+    const order = body?.order;
+    if (!Array.isArray(order) || !order.every((x) => typeof x === 'string')) {
+      return c.json({ error: 'order must be an array of agent ids' }, 400);
+    }
+    const valid = new Set(listAgentIds());
+    const filtered = order.filter((id) => id !== 'main' && valid.has(id));
+    saveAgentOrder(filtered);
+    return c.json({ ok: true, order: filtered });
+  });
+
   // List all configured agents with status
   app.get('/api/agents', (c) => {
-    const agentIds = listAgentIds();
+    const agentIds = applyAgentOrder(listAgentIds());
     const agents = agentIds.map((id) => {
       try {
         const config = loadAgentConfig(id);
         // Check if agent process is alive via PID file
-        const pidFile = path.join(STORE_DIR, `agent-${id}.pid`);
+        // Main agent uses 'claudeclaw.pid'; others use 'agent-<id>.pid'
+        const pidFile = path.join(STORE_DIR, id === 'main' ? 'claudeclaw.pid' : `agent-${id}.pid`);
         let running = false;
         if (fs.existsSync(pidFile)) {
           try {
@@ -1006,6 +1072,11 @@ export function startDashboard(botApi?: Api<RawApi>): void {
           } catch { /* process not running */ }
         }
         const stats = getAgentTokenStats(id);
+        // Per-agent Telegram state: read from the conn file the agent
+        // process writes on setTelegramConnected. Falls back to false
+        // when the agent isn't running or hasn't emitted state yet.
+        const connState = running ? readAgentConnState(id) : null;
+        const telegramConnected = connState?.telegram ?? false;
         return {
           id,
           name: config.name,
@@ -1014,27 +1085,52 @@ export function startDashboard(botApi?: Api<RawApi>): void {
           running,
           todayTurns: stats.todayTurns,
           todayCost: stats.todayCost,
+          telegramConnected,
         };
       } catch {
-        return { id, name: id, description: '', model: 'unknown', running: false, todayTurns: 0, todayCost: 0 };
+        const fallbackName = id.charAt(0).toUpperCase() + id.slice(1);
+        return { id, name: fallbackName, description: '', model: 'unknown', running: false, todayTurns: 0, todayCost: 0, telegramConnected: false };
       }
     });
 
-    // Include main bot too
-    const mainPidFile = path.join(STORE_DIR, 'claudeclaw.pid');
-    let mainRunning = false;
-    if (fs.existsSync(mainPidFile)) {
-      try {
-        const pid = parseInt(fs.readFileSync(mainPidFile, 'utf-8').trim(), 10);
-        process.kill(pid, 0);
-        mainRunning = true;
-      } catch { /* not running */ }
+    // Ensure main is first and not duplicated.
+    // main-config.json is the source of truth for main's description (editable via dashboard),
+    // so override whatever came from agent.yaml or the fallback with getMainDescription().
+    const hasMain = agentIds.includes('main');
+    let allAgents = agents;
+    if (!hasMain) {
+      const mainPidFile = path.join(STORE_DIR, 'claudeclaw.pid');
+      let mainRunning = false;
+      if (fs.existsSync(mainPidFile)) {
+        try {
+          const pid = parseInt(fs.readFileSync(mainPidFile, 'utf-8').trim(), 10);
+          process.kill(pid, 0);
+          mainRunning = true;
+        } catch { /* not running */ }
+      }
+      const mainStats = getAgentTokenStats('main');
+      // Main runs the dashboard — in-process getTelegramConnected() is
+      // authoritative; no need to go through the conn file for main itself.
+      const mainTelegramConnected = mainRunning ? getTelegramConnected() : false;
+      allAgents = [
+        { id: 'main', name: 'Main', description: getMainDescription(), model: 'claude-opus-4-6', running: mainRunning, todayTurns: mainStats.todayTurns, todayCost: mainStats.todayCost, telegramConnected: mainTelegramConnected },
+        ...agents,
+      ];
+    } else {
+      // Main was in listAgentIds; its entry came from the loop above and
+      // already has a telegramConnected field. Same for sub-agents.
+      // Override main's description and — since main runs the dashboard —
+      // its telegramConnected from the in-process getter rather than the
+      // conn file (which main also writes, but in-process is zero-latency).
+      const mainFromLoop = agents.find((a) => a.id === 'main');
+      const mainTelegramConnected = mainFromLoop?.running ? getTelegramConnected() : false;
+      allAgents = [
+        ...agents
+          .filter((a) => a.id === 'main')
+          .map((a) => ({ ...a, description: getMainDescription(), telegramConnected: mainTelegramConnected })),
+        ...agents.filter((a) => a.id !== 'main'),
+      ];
     }
-    const mainStats = getAgentTokenStats('main');
-    const allAgents = [
-      { id: 'main', name: 'Main', description: 'Primary ClaudeClaw bot', model: 'claude-opus-4-6', running: mainRunning, todayTurns: mainStats.todayTurns, todayCost: mainStats.todayCost },
-      ...agents,
-    ];
 
     return c.json({ agents: allAgents });
   });
@@ -1060,6 +1156,26 @@ export function startDashboard(botApi?: Api<RawApi>): void {
     const agentId = c.req.param('id');
     const stats = getAgentTokenStats(agentId);
     return c.json(stats);
+  });
+
+  // Update agent description
+  app.patch('/api/agents/:id/description', async (c) => {
+    const agentId = c.req.param('id');
+    const body = await c.req.json<{ description?: string }>();
+    const description = body?.description?.trim();
+    if (!description) return c.json({ error: 'description required' }, 400);
+    if (description.length > 500) return c.json({ error: 'description too long (max 500)' }, 400);
+
+    try {
+      if (agentId === 'main') {
+        setMainDescription(description);
+      } else {
+        setAgentDescription(agentId, description);
+      }
+      return c.json({ ok: true, agent: agentId, description });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Failed to update description' }, 500);
+    }
   });
 
   // Update ALL agent models at once. MUST be registered before the
@@ -1299,16 +1415,24 @@ export function startDashboard(botApi?: Api<RawApi>): void {
     return c.json({ turns });
   });
 
-  // Send message from dashboard
+  // Send message from dashboard.
+  // If agent_id is omitted or matches the hosting process, run in-process.
+  // Otherwise route via the mission-task queue to that agent's process.
   app.post('/api/chat/send', async (c) => {
     if (!botApi) return c.json({ error: 'Bot API not available' }, 503);
-    const body = await c.req.json<{ message?: string }>();
+    const body = await c.req.json<{ message?: string; agent_id?: string }>();
     const message = body?.message?.trim();
     if (!message) return c.json({ error: 'message required' }, 400);
 
+    const targetAgent = body?.agent_id?.trim() || AGENT_ID;
+
     // Fire-and-forget: response comes via SSE
-    void processMessageFromDashboard(botApi, message);
-    return c.json({ ok: true });
+    if (targetAgent === AGENT_ID) {
+      void processMessageFromDashboard(botApi, message);
+    } else {
+      dispatchDashboardChatToAgent(message, targetAgent);
+    }
+    return c.json({ ok: true, agent_id: targetAgent });
   });
 
   // Abort current processing

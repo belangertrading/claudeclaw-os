@@ -66,6 +66,13 @@ const WARROOM_ENABLED = warroomEnabled;
   .mem-expand.open .mem-preview { display: none; }
   /* Task prompt text */
   .task-prompt { transition: filter 0.2s; cursor: pointer; }
+  .task-title-wrap { position: relative; cursor: default; }
+  #task-popup-float { position: fixed; z-index: 60; background: #1e1e2e; border: 1px solid #333; border-radius: 10px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); min-width: 200px; display: none; }
+  .timer-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .timer-bar { flex: 1; height: 6px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+  .timer-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .timer-adj { background: none; border: 1px solid #444; color: #aaa; border-radius: 4px; padding: 1px 6px; font-size: 11px; cursor: pointer; }
+  .timer-adj:hover { border-color: #888; color: #fff; }
   .device-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }
   .device-mobile { background: #1e3a5f; color: #60a5fa; }
   .device-desktop { background: #3b1f5e; color: #c084fc; }
@@ -129,6 +136,10 @@ const WARROOM_ENABLED = warroomEnabled;
   .chat-bubble code { background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
   .chat-bubble pre { background: #111; padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; font-size: 12px; }
   .chat-bubble pre code { background: none; padding: 0; }
+  .code-block-wrap { position: relative; }
+  .code-block-wrap .copy-btn { position: absolute; top: 4px; right: 4px; background: #2a2a2a; border: 1px solid #3a3a3a; color: #9ca3af; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity 0.15s; z-index: 1; }
+  .code-block-wrap:hover .copy-btn { opacity: 1; }
+  .copy-btn.copied { color: #6ee7b7; border-color: #064e3b; }
   .chat-bubble table { border-collapse: collapse; width: 100%; font-size: 11px; margin: 6px 0; display: block; overflow-x: auto; }
   .chat-bubble th, .chat-bubble td { padding: 3px 6px; border-bottom: 1px solid #2a2a2a; text-align: left; white-space: nowrap; }
   .chat-bubble th { color: #a5b4fc; font-weight: 600; }
@@ -255,7 +266,7 @@ ${WARROOM_ENABLED ? `<div class="card" style="border:1px solid #1e3a5f">
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="meet-agent-select" style="background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;min-width:110px">
-        <option value="main">Main</option>
+        <option value="main">Loading...</option>
       </select>
       <input type="text" id="meet-url-input" placeholder="Paste Meet URL, or leave empty to auto-read clipboard"
         style="flex:1;min-width:220px;background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;font-family:ui-monospace,monospace">
@@ -276,7 +287,7 @@ ${WARROOM_ENABLED ? `<div class="card" style="border:1px solid #1e3a5f">
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="meet-voice-agent-select" style="background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;min-width:110px">
-        <option value="main">Main</option>
+        <option value="main">Loading...</option>
       </select>
       <input type="text" id="meet-voice-url-input" placeholder="Paste Meet URL, or leave empty to auto-read clipboard"
         style="flex:1;min-width:220px;background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;font-family:ui-monospace,monospace">
@@ -297,7 +308,7 @@ ${WARROOM_ENABLED ? `<div class="card" style="border:1px solid #1e3a5f">
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="meet-daily-agent-select" style="background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;min-width:110px">
-        <option value="main">Main</option>
+        <option value="main">Loading...</option>
       </select>
       <select id="meet-daily-mode-select" style="background:#0a0a0a;color:#fff;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-size:12px;min-width:100px">
         <option value="direct">Direct</option>
@@ -368,11 +379,21 @@ ${WARROOM_ENABLED ? `<div class="card" style="border:1px solid #1e3a5f">
         <option value="5" selected>Medium</option>
         <option value="10">High</option>
       </select>
+      <select id="mission-timeout" style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;outline:none">
+        <option value="">Timeout: default</option>
+        <option value="300000">5 min</option>
+        <option value="600000">10 min</option>
+        <option value="900000" selected>15 min</option>
+        <option value="1800000">30 min</option>
+        <option value="3600000">60 min</option>
+      </select>
       <button onclick="createMissionTask()" style="flex:1;background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;font-weight:600;cursor:pointer">Create</button>
     </div>
     <div id="mission-error" class="text-red-400 text-xs mt-2" style="display:none"></div>
   </div>
 </div>
+
+<div id="task-popup-float"></div>
 
 <!-- Agent Detail Modal -->
 <div id="agent-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:40;opacity:0;pointer-events:none;transition:opacity 0.2s"></div>
@@ -866,7 +887,7 @@ async function loadTasks() {
     }
     c.innerHTML = data.tasks.map(t => {
       const statusCls = t.status === 'running' ? 'pill-running' : t.status === 'active' ? 'pill-active' : 'pill-paused';
-      const agentBadge = t.agent_id && t.agent_id !== 'main' ? '<span class="text-xs text-gray-500 ml-2">[' + t.agent_id + ']</span>' : '';
+      const agentBadge = t.agent_id && t.agent_id !== 'main' ? '<span class="text-xs text-gray-500 ml-2">[' + resolveAgentName(t.agent_id) + ']</span>' : '';
       const lastStatusIcon = t.last_status === 'success' ? '<span class="last-success" title="Last run succeeded">&#10003;</span> ' : t.last_status === 'failed' ? '<span class="last-failed" title="Last run failed">&#10007;</span> ' : t.last_status === 'timeout' ? '<span class="last-timeout" title="Last run timed out">&#9200;</span> ' : '';
       const lastResult = t.last_result ? '<details class="mt-2"><summary class="text-xs text-gray-500">' + lastStatusIcon + 'Last result</summary><pre class="text-xs text-gray-400 mt-1 whitespace-pre-wrap break-words">' + escapeHtml(t.last_result) + '</pre></details>' : '';
       const runningInfo = t.status === 'running' && t.started_at ? '<span class="text-xs text-blue-400 ml-2">running for ' + elapsed(t.started_at) + '</span>' : '';
@@ -989,7 +1010,12 @@ async function loadHealth() {
     document.getElementById('health-age').textContent = data.sessionAge;
 
     const tgPill = document.getElementById('tg-pill');
-    tgPill.className = 'pill ' + (data.telegramConnected ? 'pill-connected' : 'pill-disconnected');
+    // Relabel based on active messenger — the element id stays 'tg-pill'
+    // for back-compat with pre-Signal builds, but Signal users see "Signal".
+    var messengerLabel = (data.messengerType || 'telegram') === 'signal' ? 'Signal' : 'Telegram';
+    tgPill.textContent = messengerLabel;
+    var isConnected = data.messengerConnected !== undefined ? data.messengerConnected : data.telegramConnected;
+    tgPill.className = 'pill ' + (isConnected ? 'pill-connected' : 'pill-disconnected');
     const waPill = document.getElementById('wa-pill');
     waPill.className = 'pill ' + (data.waConnected ? 'pill-connected' : 'pill-disconnected');
     const slackPill = document.getElementById('slack-pill');
@@ -1031,6 +1057,36 @@ async function loadTokens() {
 
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyCode(btn) {
+  var code = btn.parentElement.querySelector('code');
+  if (!code) return;
+  var text = code.textContent;
+  var onDone = function() {
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  };
+  var onFail = function() {
+    btn.textContent = 'Failed';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onDone, onFail);
+    return;
+  }
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) onDone(); else onFail();
+  } catch (e) { onFail(); }
 }
 
 async function loadInfo() {
@@ -1239,14 +1295,14 @@ async function loadMeetAgentOptions() {
   if (!selAvatar && !selVoice && !selDaily) return;
   try {
     const data = await api('/api/agents');
-    const ids = new Set(['main']);
+    var agentMap = {};
+    agentMap['main'] = 'Main';
     if (data && Array.isArray(data.agents)) {
-      for (const a of data.agents) if (a && a.id) ids.add(a.id);
+      for (const a of data.agents) if (a && a.id) agentMap[a.id] = a.name || (a.id.charAt(0).toUpperCase() + a.id.slice(1));
     }
-    const sorted = ['main', ...[...ids].filter(function(x){ return x !== 'main'; }).sort()];
+    var sorted = ['main', ...Object.keys(agentMap).filter(function(x){ return x !== 'main'; }).sort()];
     const optionsHtml = sorted.map(function(id) {
-      const label = id.charAt(0).toUpperCase() + id.slice(1);
-      return '<option value="' + id + '">' + label + '</option>';
+      return '<option value="' + id + '">' + (agentMap[id] || id) + '</option>';
     }).join('');
     if (selAvatar) selAvatar.innerHTML = optionsHtml;
     if (selVoice) selVoice.innerHTML = optionsHtml;
@@ -1548,7 +1604,7 @@ async function refreshMeetSessions() {
       meta.style.cssText = 'min-width:0;flex:1';
       const title = document.createElement('div');
       title.style.cssText = 'font-size:12px;color:#fff;font-weight:600';
-      const agentLabel = (s.agent_id || '').charAt(0).toUpperCase() + (s.agent_id || '').slice(1);
+      const agentLabel = resolveAgentName(s.agent_id || 'main');
       title.textContent = agentLabel + ' · ' + (s.status === 'live' ? 'live' : s.status);
       const sub = document.createElement('div');
       sub.style.cssText = 'font-size:10px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
@@ -1581,10 +1637,16 @@ const AGENT_COLORS = { main: '#4f46e5', comms: '#0ea5e9', content: '#f59e0b', op
 async function loadAgents() {
   try {
     const data = await api('/api/agents');
+    // Populate global name lookup cache
+    if (data && Array.isArray(data.agents)) {
+      data.agents.forEach(function(a) { if (a && a.id && a.name) agentNameMap[a.id] = a.name; });
+    }
     const section = document.getElementById('agents-section');
     const container = document.getElementById('agents-container');
     // Always show agents section so "+ New Agent" button is accessible
     section.style.display = '';
+    // Keep shared cache in sync so modal can pull fresh description without refetch
+    missionAgentsList = data.agents || [];
     if (!data.agents || data.agents.length <= 1) {
       container.innerHTML = '<div class="text-xs text-gray-600 py-2">No agents yet. Click + New Agent to create one.</div>';
       return;
@@ -1610,11 +1672,32 @@ async function loadAgents() {
       const avatarImg = '<img src="' + avatarUrl + '" alt="" ' +
         'style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid ' + color + ';flex-shrink:0;background:#0a0a0a" ' +
         'onerror="this.remove()">';
-      return '<div class="card clickable-card" style="min-width:150px;flex:1;max-width:220px;border-left:3px solid ' + color + '" data-agent="' + a.id + '" onclick="toggleAgentDetail(this.dataset.agent)">' +
+      const descText = (a.description || '').trim();
+      const descBlock = descText
+        ? '<div class="text-xs text-gray-400 mt-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3" title="' + escapeHtml(descText) + '">' + escapeHtml(descText) + '</div>'
+        : '<div class="text-xs text-gray-600 italic mt-1">no description</div>';
+      const isMain = a.id === 'main';
+      const dragAttrs = isMain ? '' : ' draggable="true" ondragstart="agentDragStart(event)" ondragend="agentDragEnd(event)" ondragover="agentDragOver(event)" ondrop="agentDrop(event)"';
+      const grabCursor = isMain ? '' : 'cursor:grab;';
+      // Per-agent Telegram pill — small indicator next to the agent
+      // name showing whether this agent's Telegram bot is connected.
+      // The header pill reflects only main's state; this surfaces
+      // per-agent drops so sub-agents are visibly tracked too.
+      // Green when connected, red when configured-but-disconnected,
+      // hidden entirely if the agent isn't currently running (the
+      // off/live dot below already conveys process state).
+      let tgPill = '';
+      if (a.running) {
+        const cls = a.telegramConnected ? 'pill-connected' : 'pill-disconnected';
+        const title = a.telegramConnected ? 'Telegram connected' : 'Telegram disconnected';
+        tgPill = '<span class="pill ' + cls + '" title="' + title + '" style="font-size:10px;padding:1px 6px;margin-left:4px">TG</span>';
+      }
+      return '<div class="card clickable-card"' + dragAttrs + ' style="min-width:150px;flex:1;max-width:220px;border-left:3px solid ' + color + ';' + grabCursor + 'transition:opacity 0.15s,transform 0.15s" data-agent="' + a.id + '" onclick="toggleAgentDetail(this.dataset.agent)">' +
         '<div style="display:flex;gap:10px;align-items:flex-start">' +
           avatarImg +
           '<div style="flex:1;min-width:0">' +
-            '<div class="font-bold text-white text-sm">' + a.name + '</div>' +
+            '<div class="font-bold text-white text-sm">' + a.name + tgPill + '</div>' +
+            descBlock +
             '<div class="text-xs mt-1">' + dot + ' ' + statusText + '</div>' +
             modelSelect +
             (a.running ? '<div class="text-xs text-gray-400 mt-1">' + a.todayTurns + ' turns</div>' : '') +
@@ -1695,6 +1778,19 @@ async function toggleAgentDetail(agentId) {
     var tasks = results[0], hive = results[1], convo = results[2];
     var html = '';
 
+    // Editable description (click to edit, Enter/blur saves, Esc cancels)
+    var descText = (agent && agent.description) ? agent.description : '';
+    var descDisplay = descText
+      ? escapeHtml(descText)
+      : '<span style="color:#4b5563;font-style:italic">Click to add description...</span>';
+    html += '<div id="agent-desc-block" style="margin-bottom:12px">' +
+      '<div class="text-xs text-gray-400 font-semibold mb-1 uppercase">Role</div>' +
+      '<div id="agent-desc-view" data-agent="' + agentId + '" data-raw="' + escapeHtml(descText) + '" onclick="editAgentDescription()" ' +
+        'style="background:#1a1a1a;border:1px dashed #2a2a2a;border-radius:6px;padding:8px;font-size:12px;color:#d1d5db;cursor:text;line-height:1.4" ' +
+        'title="Click to edit">' + descDisplay + '</div>' +
+      '<div id="agent-desc-status" class="text-xs mt-1" style="min-height:14px"></div>' +
+      '</div>';
+
     // Last conversation
     if (convo.turns && convo.turns.length > 0) {
       html += '<div class="text-xs text-gray-400 font-semibold mb-2 uppercase">Recent conversation</div>';
@@ -1746,6 +1842,83 @@ async function toggleAgentDetail(agentId) {
     if (!html) html = '<div class="text-gray-500 text-sm text-center py-8">No activity yet for this agent.</div>';
     body.innerHTML = html;
   } catch(e) { body.innerHTML = '<div class="text-red-400 text-sm text-center py-8">Failed to load agent details</div>'; }
+}
+
+function editAgentDescription() {
+  var view = document.getElementById('agent-desc-view');
+  if (!view || view.dataset.editing === '1') return;
+  var agentId = view.dataset.agent;
+  var current = view.dataset.raw || '';
+  view.dataset.editing = '1';
+  view.innerHTML = '<textarea id="agent-desc-input" style="width:100%;background:#0f0f0f;color:#e5e7eb;border:1px solid #2a2a2a;border-radius:4px;padding:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:48px;box-sizing:border-box" maxlength="500"></textarea>';
+  var input = document.getElementById('agent-desc-input');
+  input.value = current;
+  input.focus();
+  input.select();
+  var saved = false;
+  var commit = function() {
+    if (saved) return;
+    saved = true;
+    saveAgentDescription(agentId, input.value);
+  };
+  var cancel = function() {
+    if (saved) return;
+    saved = true;
+    renderAgentDescription(agentId, current);
+  };
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+function renderAgentDescription(agentId, descText) {
+  var view = document.getElementById('agent-desc-view');
+  if (!view) return;
+  view.dataset.editing = '';
+  view.dataset.raw = descText || '';
+  view.innerHTML = descText
+    ? escapeHtml(descText)
+    : '<span style="color:#4b5563;font-style:italic">Click to add description...</span>';
+  // Keep cached list in sync so card reflects change without full reload
+  var cached = missionAgentsList.find(function(a) { return a.id === agentId; });
+  if (cached) cached.description = descText || '';
+}
+
+async function saveAgentDescription(agentId, raw) {
+  var status = document.getElementById('agent-desc-status');
+  var trimmed = (raw || '').trim();
+  var view = document.getElementById('agent-desc-view');
+  var previous = view ? (view.dataset.raw || '') : '';
+  if (!trimmed) {
+    if (status) status.innerHTML = '<span style="color:#f87171">Description cannot be empty</span>';
+    renderAgentDescription(agentId, previous);
+    return;
+  }
+  if (trimmed === previous) { renderAgentDescription(agentId, previous); return; }
+  if (status) status.innerHTML = '<span style="color:#fbbf24">Saving...</span>';
+  try {
+    var res = await fetch(BASE + '/api/agents/' + agentId + '/description?token=' + TOKEN, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: trimmed }),
+    });
+    var data = await res.json();
+    if (res.ok && data.ok) {
+      renderAgentDescription(agentId, trimmed);
+      if (status) status.innerHTML = '<span style="color:#6ee7b7">Saved</span>';
+      setTimeout(function() { if (status) status.innerHTML = ''; }, 1500);
+      // Refresh card list so the new description shows on the card immediately
+      loadAgents();
+    } else {
+      if (status) status.innerHTML = '<span style="color:#f87171">' + escapeHtml(data.error || 'Save failed') + '</span>';
+      renderAgentDescription(agentId, previous);
+    }
+  } catch(e) {
+    if (status) status.innerHTML = '<span style="color:#f87171">Network error</span>';
+    renderAgentDescription(agentId, previous);
+  }
 }
 
 async function agentModalAction(agentId, action) {
@@ -2115,7 +2288,7 @@ async function loadHiveMind() {
       const blurClass = isBlurred ? 'privacy-blur' : '';
       return '<tr>' +
         '<td class="col-time">' + time + '</td>' +
-        '<td class="col-agent" style="color:' + color + '">' + e.agent_id + '</td>' +
+        '<td class="col-agent" style="color:' + color + '">' + resolveAgentName(e.agent_id) + '</td>' +
         '<td class="col-action">' + escapeHtml(e.action) + '</td>' +
         '<td><div class="col-summary ' + blurClass + '" data-section="hive" data-idx="' + i + '" onclick="toggleItemBlur(this)">' + escapeHtml(e.summary) + '</div></td>' +
       '</tr>';
@@ -2186,6 +2359,15 @@ async function loadSummary() {
 // ── Mission Control ──────────────────────────────────────────────────
 
 let missionAgentsList = [];
+
+// Global lookup cache: agent_id -> display name (populated by loadAgents / loadMissionControl)
+var agentNameMap = {};
+function resolveAgentName(id) {
+  if (agentNameMap[id]) return agentNameMap[id];
+  var a = missionAgentsList.find(function(x){ return x.id === id; });
+  if (a && a.name) { agentNameMap[id] = a.name; return a.name; }
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
 
 async function loadMissionControl() {
   try {
@@ -2297,7 +2479,7 @@ function renderMissionCard(t) {
 
   let resultHtml = '';
   if (t.status === 'completed' && t.result) {
-    resultHtml = '<details class="mt-2"><summary class="text-xs text-gray-500 cursor-pointer">View result' + durationStr + '</summary><pre class="text-xs text-gray-400 mt-1 whitespace-pre-wrap break-words" style="max-height:200px;overflow-y:auto">' + escapeHtml(t.result.slice(0, 2000)) + (t.result.length > 2000 ? '...' : '') + '</pre></details>';
+    resultHtml = '<details class="mt-2"><summary class="text-xs text-gray-500 cursor-pointer">View result' + durationStr + '</summary><div class="code-block-wrap"><button class="copy-btn" onclick="copyCode(this)">Copy</button><pre class="text-xs text-gray-400 mt-1 whitespace-pre-wrap break-words" style="max-height:200px;overflow-y:auto"><code>' + escapeHtml(t.result.slice(0, 2000)) + (t.result.length > 2000 ? '...' : '') + '</code></pre></div></details>';
   } else if (t.status === 'failed' && t.error) {
     resultHtml = '<div class="text-xs text-red-400 mt-1">' + escapeHtml(t.error.slice(0, 200)) + '</div>';
   }
@@ -2311,9 +2493,13 @@ function renderMissionCard(t) {
 
   const draggable = t.status === 'queued' ? ' draggable="true" ondragstart="missionDragStart(event)" ondragend="missionDragEnd(event)"' : '';
   const grabStyle = t.status === 'queued' ? 'cursor:grab;' : '';
+  const titleInner = escapeHtml(t.title);
+  const titleHtml = t.status === 'running'
+    ? '<span class="task-title-wrap text-xs font-semibold text-white" data-task-id="' + t.id + '" data-task-started="' + (t.started_at || '') + '" data-task-timeout="' + (t.timeout_ms || '') + '" onmouseenter="showTaskPopup(this)" onmouseleave="hideTaskPopup()" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + titleInner + '</span>'
+    : '<span class="text-xs font-semibold text-white" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + titleInner + '</span>';
   return '<div data-mid="' + t.id + '"' + draggable + ' style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:10px;margin-bottom:8px;' + grabStyle + 'transition:opacity 0.15s">' +
     '<div class="flex items-center justify-between mb-1">' +
-      '<span class="text-xs font-semibold text-white" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(t.title) + '</span>' +
+      titleHtml +
       '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + priorityDot + ';margin-left:6px;flex-shrink:0" title="Priority: ' + t.priority + '"></span>' +
     '</div>' +
     '<div class="flex items-center justify-between">' +
@@ -2338,6 +2524,52 @@ async function missionAction(id, action) {
 // ── Drag & Drop ──────────────────────────────────────────────────────
 
 var missionDragId = null;
+
+var agentDragId = null;
+function agentDragStart(e) {
+  e.stopPropagation();
+  agentDragId = e.currentTarget.dataset.agent;
+  e.currentTarget.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', agentDragId); } catch(_) {}
+}
+function agentDragEnd(e) {
+  e.currentTarget.style.opacity = '1';
+  agentDragId = null;
+}
+function agentDragOver(e) {
+  if (!agentDragId) return;
+  var target = e.currentTarget;
+  if (!target || target.dataset.agent === 'main' || target.dataset.agent === agentDragId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var container = document.getElementById('agents-container');
+  var dragged = container && container.querySelector('[data-agent="' + agentDragId + '"]');
+  if (!dragged || dragged === target) return;
+  var rect = target.getBoundingClientRect();
+  var before = (e.clientX - rect.left) < rect.width / 2;
+  if (before) {
+    if (target.previousSibling !== dragged) container.insertBefore(dragged, target);
+  } else {
+    if (target.nextSibling !== dragged) container.insertBefore(dragged, target.nextSibling);
+  }
+}
+async function agentDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!agentDragId) return;
+  var container = document.getElementById('agents-container');
+  if (!container) return;
+  var order = Array.prototype.map.call(container.children, function(el) { return el.dataset && el.dataset.agent; })
+    .filter(function(id) { return id && id !== 'main'; });
+  try {
+    await fetch(BASE + '/api/agents/order?token=' + TOKEN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: order }),
+    });
+  } catch(err) { console.error('Agent reorder save failed:', err); }
+}
 
 function missionDragStart(e) {
   missionDragId = e.currentTarget.dataset.mid;
@@ -2438,24 +2670,32 @@ function closeMissionModal() {
   document.getElementById('mission-title').value = '';
   document.getElementById('mission-prompt').value = '';
   document.getElementById('mission-priority').value = '5';
+  document.getElementById('mission-timeout').value = '900000';
   document.getElementById('mission-error').style.display = 'none';
 }
-document.getElementById('mission-overlay').addEventListener('click', closeMissionModal);
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('mission-overlay').addEventListener('click', closeMissionModal);
+});
 
 async function createMissionTask() {
   const title = document.getElementById('mission-title').value.trim();
   const prompt = document.getElementById('mission-prompt').value.trim();
   const priority = parseInt(document.getElementById('mission-priority').value, 10);
+  const timeoutVal = document.getElementById('mission-timeout').value;
+  const timeout_ms = timeoutVal ? parseInt(timeoutVal, 10) : null;
   const errEl = document.getElementById('mission-error');
 
   if (!title) { errEl.textContent = 'Title is required'; errEl.style.display = ''; return; }
   if (!prompt) { errEl.textContent = 'Prompt is required'; errEl.style.display = ''; return; }
 
+  var payload = { title: title, prompt: prompt, priority: priority };
+  if (timeout_ms) payload.timeout_ms = timeout_ms;
+
   try {
     const res = await fetch(BASE + '/api/mission/tasks?token=' + TOKEN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title, prompt: prompt, priority: priority }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const data = await res.json();
@@ -2469,6 +2709,70 @@ async function createMissionTask() {
     errEl.textContent = 'Network error';
     errEl.style.display = '';
   }
+}
+
+// ── Task Timeout Popup ───────────────────────────────────────────────
+
+function fmtMs(ms) {
+  if (ms >= 3600000) return Math.round(ms / 3600000) + 'h';
+  if (ms >= 60000) return Math.round(ms / 60000) + 'm';
+  return Math.round(ms / 1000) + 's';
+}
+
+var popupHideTimer = null;
+function showTaskPopup(el) {
+  clearTimeout(popupHideTimer);
+  var popup = document.getElementById('task-popup-float');
+  var taskId = el.dataset.taskId;
+  var startedAt = parseInt(el.dataset.taskStarted || '0', 10);
+  var timeoutMs = parseInt(el.dataset.taskTimeout || '0', 10) || 900000;
+  var nowSec = Math.floor(Date.now() / 1000);
+  var elapsedMs = startedAt ? (nowSec - startedAt) * 1000 : 0;
+  var pct = Math.min(100, Math.round((elapsedMs / timeoutMs) * 100));
+  var barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#fbbf24' : '#60a5fa';
+
+  popup.innerHTML =
+    '<div class="timer-row">' +
+      '<span class="text-xs text-gray-400">' + fmtMs(elapsedMs) + ' / ' + fmtMs(timeoutMs) + '</span>' +
+    '</div>' +
+    '<div class="timer-bar"><div class="timer-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>' +
+    '<div class="flex gap-2 mt-2">' +
+      '<button class="timer-adj" onclick="adjustTimeout(\\''+taskId+'\\', ' + timeoutMs + ' + 300000)">+5m</button>' +
+      '<button class="timer-adj" onclick="adjustTimeout(\\''+taskId+'\\', ' + timeoutMs + ' + 600000)">+10m</button>' +
+      '<button class="timer-adj" onclick="adjustTimeout(\\''+taskId+'\\', ' + timeoutMs + ' + 1800000)">+30m</button>' +
+    '</div>' +
+    '<div class="text-[10px] text-gray-500 mt-2 leading-tight">Applies to the next run. The current attempt keeps its original timeout.</div>';
+
+  var rect = el.getBoundingClientRect();
+  popup.style.top = (rect.bottom + 8) + 'px';
+  popup.style.left = rect.left + 'px';
+  popup.style.display = 'block';
+}
+
+function hideTaskPopup(delay) {
+  popupHideTimer = setTimeout(function() {
+    document.getElementById('task-popup-float').style.display = 'none';
+  }, delay || 300);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var popup = document.getElementById('task-popup-float');
+  if (popup) {
+    popup.addEventListener('mouseenter', function() { clearTimeout(popupHideTimer); });
+    popup.addEventListener('mouseleave', function() { hideTaskPopup(); });
+  }
+});
+
+async function adjustTimeout(taskId, newMs) {
+  try {
+    await fetch(BASE + '/api/mission/tasks/' + taskId + '?token=' + TOKEN, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeout_ms: newMs }),
+    });
+    document.getElementById('task-popup-float').style.display = 'none';
+    await loadMissionControl();
+  } catch(e) { console.error('adjustTimeout failed:', e); }
 }
 
 // ── Task History Drawer ──────────────────────────────────────────────
@@ -2506,7 +2810,7 @@ async function loadHistoryPage() {
       }
       var date = new Date(t.completed_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       var time = new Date(t.completed_at * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      var resultHtml = t.result ? '<details class="mt-2"><summary class="text-xs text-gray-500 cursor-pointer">View result</summary><pre class="text-xs text-gray-400 mt-1 whitespace-pre-wrap break-words" style="max-height:200px;overflow-y:auto">' + escapeHtml(t.result.slice(0, 2000)) + '</pre></details>' : '';
+      var resultHtml = t.result ? '<details class="mt-2"><summary class="text-xs text-gray-500 cursor-pointer">View result</summary><div class="code-block-wrap"><button class="copy-btn" onclick="copyCode(this)">Copy</button><pre class="text-xs text-gray-400 mt-1 whitespace-pre-wrap break-words" style="max-height:200px;overflow-y:auto"><code>' + escapeHtml(t.result.slice(0, 2000)) + '</code></pre></div></details>' : '';
       var errorHtml = t.error ? '<div class="text-xs text-red-400 mt-1">' + escapeHtml(t.error.slice(0, 200)) + '</div>' : '';
       return '<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:12px;margin-bottom:8px">' +
         '<div class="flex items-center justify-between mb-1">' +
@@ -2568,6 +2872,13 @@ let chatHistoryLoaded = false;
 let unreadCount = 0;
 let chatAgents = [];
 let activeAgentTab = 'all';
+// Per-agent "in flight" set. processing:true adds, processing:false removes.
+// Drives the typing indicator on tab switch so work you can't see is still
+// rendered when you return.
+const busyAgents = new Set();
+// Per-agent unread set. Populated when an assistant_message lands on a tab
+// that isn't currently active.
+const unreadAgents = new Set();
 
 function openChat() {
   chatOpen = true;
@@ -2611,14 +2922,54 @@ async function loadAgentTabs() {
     chatAgents.forEach(function(a) {
       const tab = document.createElement('button');
       tab.className = 'chat-agent-tab' + (activeAgentTab === a.id ? ' active' : '');
+      tab.dataset.agent = a.id;
       const dot = document.createElement('span');
       dot.className = 'agent-dot ' + (a.running ? 'live' : 'dead');
       tab.appendChild(dot);
-      tab.appendChild(document.createTextNode(a.id.charAt(0).toUpperCase() + a.id.slice(1)));
+      tab.appendChild(document.createTextNode(a.name || (a.id.charAt(0).toUpperCase() + a.id.slice(1))));
+      // Busy spinner (thinking) — separate from the green unread dot.
+      const busyMark = document.createElement('span');
+      busyMark.className = 'tab-busy';
+      busyMark.textContent = '…';
+      busyMark.style.cssText = 'display:none;margin-left:6px;color:#f59e0b;font-weight:bold';
+      tab.appendChild(busyMark);
+      const unreadDot = document.createElement('span');
+      unreadDot.className = 'tab-unread';
+      unreadDot.style.cssText = 'display:none;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-left:6px;vertical-align:middle';
+      tab.appendChild(unreadDot);
       tab.onclick = function() { switchAgentTab(a.id, this); };
       container.appendChild(tab);
     });
+    refreshUnreadBadges();
+    refreshBusyBadges();
   } catch(e) { console.error('Agent tabs error', e); }
+}
+
+// Tab filter: "all" passes everything; an agent tab only renders events
+// whose agentId matches. Older events without agentId are treated as "main"
+// for backward compatibility.
+function eventBelongsToActiveTab(ev) {
+  if (activeAgentTab === 'all') return true;
+  const eventAgent = ev && ev.agentId ? ev.agentId : 'main';
+  return eventAgent === activeAgentTab;
+}
+
+function refreshUnreadBadges() {
+  document.querySelectorAll('.chat-agent-tab').forEach(function(tab) {
+    const agent = tab.dataset.agent;
+    const badge = tab.querySelector('.tab-unread');
+    if (!badge) return;
+    badge.style.display = (agent && unreadAgents.has(agent)) ? 'inline-block' : 'none';
+  });
+}
+
+function refreshBusyBadges() {
+  document.querySelectorAll('.chat-agent-tab').forEach(function(tab) {
+    const agent = tab.dataset.agent;
+    const busy = tab.querySelector('.tab-busy');
+    if (!busy) return;
+    busy.style.display = (agent && busyAgents.has(agent)) ? 'inline-block' : 'none';
+  });
 }
 
 function switchAgentTab(agentId, el) {
@@ -2626,6 +2977,15 @@ function switchAgentTab(agentId, el) {
   document.querySelectorAll('.chat-agent-tab').forEach(function(t) { t.classList.remove('active'); });
   if (el) el.classList.add('active');
   chatHistoryLoaded = false;
+  // Reconcile the shared typing/progress bar against the set of busy agents.
+  const hasBusy = activeAgentTab === 'all'
+    ? busyAgents.size > 0
+    : busyAgents.has(activeAgentTab);
+  if (hasBusy) showTyping(); else hideTyping();
+  // Clear unread for the newly-active agent.
+  if (agentId !== 'all') unreadAgents.delete(agentId);
+  else unreadAgents.clear();
+  refreshUnreadBadges();
   loadChatHistory();
   loadSessionInfo();
 }
@@ -2682,12 +3042,21 @@ function connectChatSSE() {
 
   chatSSE.addEventListener('user_message', function(e) {
     const ev = JSON.parse(e.data);
+    if (!eventBelongsToActiveTab(ev)) return;
     appendChatBubble('user', ev.content, ev.source, true);
     if (!chatOpen) { unreadCount++; updateFabBadge(); }
   });
 
   chatSSE.addEventListener('assistant_message', function(e) {
     const ev = JSON.parse(e.data);
+    const evAgent = (ev && ev.agentId) ? ev.agentId : 'main';
+    if (!eventBelongsToActiveTab(ev)) {
+      // Reply landed on a tab the user isn't looking at — flag it.
+      unreadAgents.add(evAgent);
+      refreshUnreadBadges();
+      if (!chatOpen) { unreadCount++; updateFabBadge(); }
+      return;
+    }
     appendChatBubble('assistant', ev.content, ev.source, true);
     hideTyping();
     if (!chatOpen) { unreadCount++; updateFabBadge(); }
@@ -2696,12 +3065,35 @@ function connectChatSSE() {
 
   chatSSE.addEventListener('processing', function(e) {
     const ev = JSON.parse(e.data);
+    const evAgent = (ev && ev.agentId) ? ev.agentId : 'main';
+    if (ev.processing) busyAgents.add(evAgent); else busyAgents.delete(evAgent);
+    refreshBusyBadges();
+    if (!eventBelongsToActiveTab(ev)) return;
     if (ev.processing) showTyping(); else hideTyping();
   });
 
   chatSSE.addEventListener('progress', function(e) {
     const ev = JSON.parse(e.data);
+    if (!eventBelongsToActiveTab(ev)) return;
     showProgress(ev.description);
+  });
+
+  // Mission task completion/timeout — refresh the task list. Not routed
+  // through showProgress because the event carries no description.
+  chatSSE.addEventListener('mission_update', function(e) {
+    try {
+      const ev = JSON.parse(e.data);
+      if (typeof loadMissionControl === 'function') loadMissionControl();
+      // If this is a chat-type mission completion, make sure the typing
+      // indicator is cleared — the per-agent processing event will arrive
+      // via the bot.ts poller, but clearing here first avoids flicker.
+      if (ev.content) {
+        try {
+          const payload = JSON.parse(ev.content);
+          if (payload.type === 'chat') hideTyping();
+        } catch { /* non-JSON content, ignore */ }
+      }
+    } catch { /* malformed event, ignore */ }
   });
 
   chatSSE.addEventListener('error', function(e) {
@@ -2779,7 +3171,7 @@ function renderMarkdown(text) {
 
   // Code blocks: ` + '```' + `...` + '```' + `
   s = s.replace(/` + '`' + '`' + '`' + `(?:\\w*\\n)?([\\s\\S]*?)` + '`' + '`' + '`' + `/g, function(_, code) {
-    return preserve('<pre><code>' + escapeHtml(code.trim()) + '<\\/code><\\/pre>');
+    return preserve('<div class="code-block-wrap"><button class="copy-btn" onclick="copyCode(this)">Copy<\\/button><pre><code>' + escapeHtml(code.trim()) + '<\\/code><\\/pre><\\/div>');
   });
 
   // Tables: consecutive lines starting and ending with |
@@ -2863,11 +3255,15 @@ async function sendChatMessage() {
   autoResizeInput();
   // Disable send while processing
   document.getElementById('chat-send-btn').disabled = true;
+  // Route to the selected agent tab. "All" falls back to main so the
+  // default send still hits the hosting process, matching historical
+  // behavior.
+  const targetAgent = activeAgentTab === 'all' ? 'main' : activeAgentTab;
   try {
     await fetch(BASE + '/api/chat/send?token=' + TOKEN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, agent_id: targetAgent }),
     });
   } catch(e) {
     console.error('Send error', e);

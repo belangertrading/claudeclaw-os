@@ -1,9 +1,11 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { Api, Bot, Context, InputFile, RawApi } from 'grammy';
 
 import { runAgent, runAgentWithRetry, UsageInfo, AgentProgressEvent } from './agent.js';
+import { isAgentRunning } from './agent-create.js';
 import { AgentError } from './errors.js';
 import {
   AGENT_ID,
@@ -28,9 +30,10 @@ import {
   PROTECTED_ENV_VARS,
   DAILY_COST_BUDGET,
   HOURLY_TOKEN_BUDGET,
+  MEMORY_NOTIFY,
   PROJECT_ROOT,
 } from './config.js';
-import { clearSession, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount } from './db.js';
+import { clearSession, createMissionTask, getMissionTask, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount } from './db.js';
 import { logger } from './logger.js';
 import { downloadMedia, buildPhotoMessage, buildDocumentMessage, buildVideoMessage } from './media.js';
 import { buildMemoryContext, evaluateMemoryRelevance, saveConversationTurn, shouldNudgeMemory, MEMORY_NUDGE_TEXT } from './memory.js';
@@ -842,7 +845,7 @@ export function createBot(): Bot {
   // Register callback for high-importance memory notifications.
   // When a memory with importance >= 0.8 is created, notify via Telegram
   // so the user can /pin it if it should be permanent.
-  if (ALLOWED_CHAT_ID) {
+  if (ALLOWED_CHAT_ID && MEMORY_NOTIFY) {
     setHighImportanceCallback((memoryId, summary, importance) => {
       const msg = `🧠 New memory #${memoryId} [${importance.toFixed(1)}]: ${summary.slice(0, 200)}\n\n/pin ${memoryId} to make permanent`;
       bot.api.sendMessage(ALLOWED_CHAT_ID, msg).catch(() => {});
@@ -1054,7 +1057,7 @@ export function createBot(): Bot {
   bot.command('memory', async (ctx) => {
     if (await replyIfLocked(ctx)) return;
     const chatId = ctx.chat!.id.toString();
-    const recent = getRecentMemories(chatId, 10);
+    const recent = getRecentMemories(chatId, 10, AGENT_ID);
     if (recent.length === 0) {
       await ctx.reply('No memories yet.');
       return;
@@ -1445,17 +1448,23 @@ export function createBot(): Bot {
 
   // Voice messages — real transcription via Groq Whisper
   bot.on('message:voice', async (ctx) => {
+    const chatId = ctx.chat!.id;
+    if (!isAuthorised(chatId)) return;
     const caps = voiceCapabilities();
     if (!caps.stt) {
       await ctx.reply('Voice transcription not configured. Add GROQ_API_KEY to .env');
       return;
     }
-    const chatId = ctx.chat!.id;
-    if (!isAuthorised(chatId)) return;
     if (!ALLOWED_CHAT_ID) {
       await ctx.reply(
         `Your chat ID is ${chatId}.\n\nAdd this to your .env:\n\nALLOWED_CHAT_ID=${chatId}\n\nThen restart ClaudeClaw OS.`,
       );
+      return;
+    }
+    // Telegram Bot API caps downloads at 20MB regardless of server-side size.
+    const voiceSize = ctx.message.voice.file_size;
+    if (voiceSize && voiceSize > 20 * 1024 * 1024) {
+      await ctx.reply('Voice message is over 20 MB (Telegram bot download cap). Try a shorter clip.');
       return;
     }
 
@@ -1470,6 +1479,47 @@ export function createBot(): Bot {
     } catch (err) {
       logger.error({ err }, 'Voice transcription failed');
       await ctx.reply('Could not transcribe voice message. Try again.');
+    }
+  });
+
+  // Audio files — transcription via the same Whisper path as voice notes.
+  // Telegram emits message:audio for music files and uploaded audio that
+  // wasn't recorded as a voice note (podcast clips, recorded meetings,
+  // an .mp3 dragged in from Finder). Without this handler, those files
+  // fall through to message:document and get passed to Claude as opaque
+  // file context rather than a transcript. The only difference from the
+  // voice handler is which Telegram field holds the file_id.
+  bot.on('message:audio', async (ctx) => {
+    const chatId = ctx.chat!.id;
+    if (!isAuthorised(chatId)) return;
+    const caps = voiceCapabilities();
+    if (!caps.stt) {
+      await ctx.reply('Audio transcription not configured. Add GROQ_API_KEY to .env');
+      return;
+    }
+    if (!ALLOWED_CHAT_ID) {
+      await ctx.reply(
+        `Your chat ID is ${chatId}.\n\nAdd this to your .env:\n\nALLOWED_CHAT_ID=${chatId}\n\nThen restart ClaudeClaw OS.`,
+      );
+      return;
+    }
+    // Audio uploads hit the 20MB bot download cap more often than voice notes.
+    const audioSize = ctx.message.audio.file_size;
+    if (audioSize && audioSize > 20 * 1024 * 1024) {
+      await ctx.reply('Audio file is over 20 MB (Telegram bot download cap). Split or compress first.');
+      return;
+    }
+
+    try {
+      const fileId = ctx.message.audio.file_id;
+      const localPath = await downloadTelegramFile(activeBotToken, fileId, UPLOADS_DIR);
+      const transcribed = await transcribeAudio(localPath);
+      const wantsVoiceBack = /\b(respond (with|via|in) voice|send (me )?(a )?voice( note| back)?|voice reply|reply (with|via) voice)\b/i.test(transcribed);
+      const chatIdStr = ctx.chat!.id.toString();
+      messageQueue.enqueue(chatIdStr, () => handleMessage(ctx, `[Voice transcribed]: ${transcribed}`, wantsVoiceBack));
+    } catch (err) {
+      logger.error({ err }, 'Audio transcription failed');
+      await ctx.reply('Could not transcribe audio file. Try again.');
     }
   });
 
@@ -1573,8 +1623,105 @@ export function createBot(): Bot {
 }
 
 /**
- * Process a message sent from the dashboard web UI.
- * Runs the agent pipeline and relays the response to Telegram.
+ * Dispatch a dashboard chat message to another agent's process via the
+ * mission task queue. The target agent claims the task from its own
+ * scheduler loop, runs it with its own model / system prompt / memory /
+ * session, and saves the turns to conversation_log under its agent_id.
+ *
+ * This function watches the task for completion and emits SSE chat events
+ * so the dashboard frontend renders the response in the right tab.
+ */
+export function dispatchDashboardChatToAgent(
+  text: string,
+  targetAgentId: string,
+): void {
+  if (!ALLOWED_CHAT_ID) return;
+  const chatIdStr = ALLOWED_CHAT_ID;
+
+  emitChatEvent({
+    type: 'user_message',
+    chatId: chatIdStr,
+    agentId: targetAgentId,
+    content: text,
+    source: 'dashboard',
+  });
+
+  // Dead-agent short-circuit. If the target agent's process isn't running,
+  // the chat mission will never be claimed. Fail fast instead of waiting
+  // out the 10-minute poller.
+  if (targetAgentId !== AGENT_ID && !isAgentRunning(targetAgentId)) {
+    emitChatEvent({
+      type: 'error',
+      chatId: chatIdStr,
+      agentId: targetAgentId,
+      content: `Agent "${targetAgentId}" isn't running. Start it from Mission Control first.`,
+    });
+    return;
+  }
+
+  // Per-agent processing indicator. Doesn't touch the global processing
+  // state because the work runs in another process.
+  emitChatEvent({ type: 'processing', chatId: chatIdStr, agentId: targetAgentId, processing: true });
+
+  const taskId = crypto.randomBytes(4).toString('hex');
+  const title = text.length > 60 ? text.slice(0, 60) + '...' : text;
+  // Chat-type mission: no per-task timeout override (pass null so scheduler
+  // falls back to MISSION_TIMEOUT_MS), type='chat', chat_id carries scope.
+  createMissionTask(taskId, title, text, targetAgentId, AGENT_ID, 5, null, 'chat', chatIdStr);
+
+  logger.info(
+    { taskId, targetAgentId, chatId: chatIdStr, messageLen: text.length },
+    'Dispatched dashboard chat to agent process',
+  );
+
+  const watchStart = Date.now();
+  const watchTimeoutMs = 10 * 60 * 1000;
+  const pollMs = 1000;
+  const poller = setInterval(() => {
+    const task = getMissionTask(taskId);
+    if (!task) {
+      clearInterval(poller);
+      return;
+    }
+    if (task.status === 'completed') {
+      clearInterval(poller);
+      emitChatEvent({ type: 'processing', chatId: chatIdStr, agentId: targetAgentId, processing: false });
+      emitChatEvent({
+        type: 'assistant_message',
+        chatId: chatIdStr,
+        agentId: targetAgentId,
+        content: task.result ?? 'Done.',
+        source: 'dashboard',
+      });
+      return;
+    }
+    if (task.status === 'failed' || task.status === 'cancelled') {
+      clearInterval(poller);
+      emitChatEvent({ type: 'processing', chatId: chatIdStr, agentId: targetAgentId, processing: false });
+      emitChatEvent({
+        type: 'error',
+        chatId: chatIdStr,
+        agentId: targetAgentId,
+        content: task.error ?? `Agent task ${task.status}.`,
+      });
+      return;
+    }
+    if (Date.now() - watchStart > watchTimeoutMs) {
+      clearInterval(poller);
+      emitChatEvent({ type: 'processing', chatId: chatIdStr, agentId: targetAgentId, processing: false });
+      emitChatEvent({
+        type: 'error',
+        chatId: chatIdStr,
+        agentId: targetAgentId,
+        content: 'Agent did not respond in time. Task left running in the background.',
+      });
+    }
+  }, pollMs);
+}
+
+/**
+ * Process a message sent from the dashboard web UI for the hosting agent.
+ * Sub-agent messages go via dispatchDashboardChatToAgent above.
  * Response is delivered via SSE (fire-and-forget from the caller's perspective).
  */
 export async function processMessageFromDashboard(
@@ -1597,8 +1744,8 @@ async function processDashboardMessage(
   text: string,
   chatIdStr: string,
 ): Promise<void> {
-  emitChatEvent({ type: 'user_message', chatId: chatIdStr, content: text, source: 'dashboard' });
-  setProcessing(chatIdStr, true);
+  emitChatEvent({ type: 'user_message', chatId: chatIdStr, agentId: AGENT_ID, content: text, source: 'dashboard' });
+  setProcessing(chatIdStr, true, AGENT_ID);
 
   try {
     const sessionId = getSession(chatIdStr, AGENT_ID);
@@ -1621,7 +1768,7 @@ async function processDashboardMessage(
     const fullMessage = dashParts.join('\n\n');
 
     const onProgress = (event: AgentProgressEvent) => {
-      emitChatEvent({ type: 'progress', chatId: chatIdStr, description: event.description });
+      emitChatEvent({ type: 'progress', chatId: chatIdStr, agentId: AGENT_ID, description: event.description });
     };
 
     const abortCtrl = new AbortController();
@@ -1650,7 +1797,7 @@ async function processDashboardMessage(
       const msg = result.text === null
         ? `Timed out after ${Math.round(AGENT_TIMEOUT_MS / 1000)}s. Try breaking the task into smaller steps.`
         : 'Stopped.';
-      emitChatEvent({ type: 'assistant_message', chatId: chatIdStr, content: msg, source: 'dashboard' });
+      emitChatEvent({ type: 'assistant_message', chatId: chatIdStr, agentId: AGENT_ID, content: msg, source: 'dashboard' });
       return;
     }
 
@@ -1666,16 +1813,9 @@ async function processDashboardMessage(
       void evaluateMemoryRelevance(dashSurfacedIds, dashSummaries, text, rawResponse).catch(() => {});
     }
 
-    // Emit assistant response to SSE clients
-    emitChatEvent({ type: 'assistant_message', chatId: chatIdStr, content: rawResponse, source: 'dashboard' });
-
-    // Relay to Telegram so the user sees it there too
-    const { text: responseText } = extractFileMarkers(rawResponse);
-    if (responseText) {
-      for (const part of splitMessage(formatForTelegram(responseText))) {
-        await botApi.sendMessage(parseInt(chatIdStr), part, { parse_mode: 'HTML' });
-      }
-    }
+    // Emit assistant response to SSE clients. Dashboard chat and Telegram
+    // are distinct channels now — no Telegram mirror here.
+    emitChatEvent({ type: 'assistant_message', chatId: chatIdStr, agentId: AGENT_ID, content: rawResponse, source: 'dashboard' });
 
     // Log token usage
     if (result.usage) {
@@ -1699,9 +1839,9 @@ async function processDashboardMessage(
   } catch (err) {
     setActiveAbort(chatIdStr, null);
     logger.error({ err }, 'Dashboard message processing error');
-    emitChatEvent({ type: 'error', chatId: chatIdStr, content: 'Something went wrong. Check the logs.' });
+    emitChatEvent({ type: 'error', chatId: chatIdStr, agentId: AGENT_ID, content: 'Something went wrong. Check the logs.' });
   } finally {
-    setProcessing(chatIdStr, false);
+    setProcessing(chatIdStr, false, AGENT_ID);
   }
 }
 

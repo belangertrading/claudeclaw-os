@@ -612,6 +612,13 @@ function runMigrations(database: Database.Database): void {
     logger.info('Migration: made mission_tasks.assigned_agent nullable');
   }
 
+  // Mission Control: add timeout_ms column for per-task timeout overrides
+  const missionCols2 = database.prepare(`PRAGMA table_info(mission_tasks)`).all() as Array<{ name: string }>;
+  if (!missionCols2.find((c) => c.name === 'timeout_ms')) {
+    database.exec(`ALTER TABLE mission_tasks ADD COLUMN timeout_ms INTEGER`);
+    logger.info('Migration: added timeout_ms to mission_tasks');
+  }
+
   // Live Meetings: add provider column so we can track which platform
   // each session used (pika avatar vs recall voice-only). Default 'pika'
   // for existing rows so historical data keeps the right label.
@@ -620,6 +627,27 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE meet_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'pika'`);
     logger.info('Migration: added provider column to meet_sessions');
   }
+
+  // Per-agent dashboard chat: mission tasks now double as the cross-process
+  // transport for chat. type='async' keeps the existing one-shot behavior;
+  // type='chat' carries chat_id so the executing agent can save its turns
+  // under the correct dashboard chat scope. Re-pragma here so we see the
+  // timeout_ms column added above — conditional ADD COLUMNs only check
+  // for the name they're about to add, so column-order doesn't matter.
+  const missionCols3 = database.prepare(`PRAGMA table_info(mission_tasks)`).all() as Array<{ name: string }>;
+  if (!missionCols3.find((c) => c.name === 'type')) {
+    database.exec(`ALTER TABLE mission_tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'async'`);
+    logger.info('Migration: added mission_tasks.type column');
+  }
+  if (!missionCols3.find((c) => c.name === 'chat_id')) {
+    database.exec(`ALTER TABLE mission_tasks ADD COLUMN chat_id TEXT`);
+    logger.info('Migration: added mission_tasks.chat_id column');
+  }
+
+  // Per-agent conversation queries need an index that matches their WHERE.
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_convo_log_chat_agent ON conversation_log(chat_id, agent_id, created_at DESC)`,
+  );
 }
 
 /** @internal - for tests only. Creates a fresh in-memory database. */
@@ -753,10 +781,11 @@ export function searchMemories(
   query: string,
   limit = 5,
   queryEmbedding?: number[],
+  agentId = 'main',
 ): Memory[] {
   // Strategy 1: Vector similarity search (if embedding provided)
   if (queryEmbedding && queryEmbedding.length > 0) {
-    const candidates = getMemoriesWithEmbeddings(chatId);
+    const candidates = getMemoriesWithEmbeddings(chatId, agentId);
     if (candidates.length > 0) {
       const scored = candidates
         .map((c) => ({ id: c.id, score: cosineSimilarity(queryEmbedding, c.embedding) }))
@@ -767,9 +796,13 @@ export function searchMemories(
       if (scored.length > 0) {
         const ids = scored.map((s) => s.id);
         const placeholders = ids.map(() => '?').join(',');
+        // agent_id is already enforced upstream by getMemoriesWithEmbeddings,
+        // but repeat it here so this query is correct on its own.
         const rows = db
-          .prepare(`SELECT * FROM memories WHERE id IN (${placeholders}) AND superseded_by IS NULL`)
-          .all(...ids) as Memory[];
+          .prepare(
+            `SELECT * FROM memories WHERE id IN (${placeholders}) AND agent_id = ? AND superseded_by IS NULL`,
+          )
+          .all(...ids, agentId) as Memory[];
         // Preserve similarity-score ordering (SQL IN doesn't guarantee order)
         const rowMap = new Map(rows.map((r) => [r.id, r]));
         return ids.map((id) => rowMap.get(id)).filter(Boolean) as Memory[];
@@ -791,11 +824,11 @@ export function searchMemories(
     .prepare(
       `SELECT memories.* FROM memories
        JOIN memories_fts ON memories.id = memories_fts.rowid
-       WHERE memories_fts MATCH ? AND memories.chat_id = ? AND memories.superseded_by IS NULL
+       WHERE memories_fts MATCH ? AND memories.chat_id = ? AND memories.agent_id = ? AND memories.superseded_by IS NULL
        ORDER BY rank
        LIMIT ?`,
     )
-    .all(ftsQuery, chatId, limit) as Memory[];
+    .all(ftsQuery, chatId, agentId, limit) as Memory[];
 
   if (results.length > 0) return results;
 
@@ -812,11 +845,11 @@ export function searchMemories(
   results = db
     .prepare(
       `SELECT * FROM memories
-       WHERE chat_id = ? AND superseded_by IS NULL AND (${likeConditions})
+       WHERE chat_id = ? AND agent_id = ? AND superseded_by IS NULL AND (${likeConditions})
        ORDER BY importance DESC, accessed_at DESC
        LIMIT ?`,
     )
-    .all(chatId, ...likeParams, limit) as Memory[];
+    .all(chatId, agentId, ...likeParams, limit) as Memory[];
 
   return results;
 }
@@ -850,10 +883,15 @@ export function saveStructuredMemoryAtomic(
   return txn();
 }
 
-export function getMemoriesWithEmbeddings(chatId: string): Array<{ id: number; embedding: number[]; summary: string; importance: number }> {
+export function getMemoriesWithEmbeddings(
+  chatId: string,
+  agentId = 'main',
+): Array<{ id: number; embedding: number[]; summary: string; importance: number }> {
   const rows = db
-    .prepare('SELECT id, embedding, summary, importance FROM memories WHERE chat_id = ? AND embedding IS NOT NULL AND superseded_by IS NULL')
-    .all(chatId) as Array<{ id: number; embedding: string; summary: string; importance: number }>;
+    .prepare(
+      'SELECT id, embedding, summary, importance FROM memories WHERE chat_id = ? AND agent_id = ? AND embedding IS NOT NULL AND superseded_by IS NULL',
+    )
+    .all(chatId, agentId) as Array<{ id: number; embedding: string; summary: string; importance: number }>;
   return rows.map((r) => ({
     id: r.id,
     embedding: JSON.parse(r.embedding) as number[],
@@ -862,21 +900,25 @@ export function getMemoriesWithEmbeddings(chatId: string): Array<{ id: number; e
   }));
 }
 
-export function getRecentHighImportanceMemories(chatId: string, limit = 5): Memory[] {
+export function getRecentHighImportanceMemories(
+  chatId: string,
+  limit = 5,
+  agentId = 'main',
+): Memory[] {
   return db
     .prepare(
-      `SELECT * FROM memories WHERE chat_id = ? AND importance >= 0.5
+      `SELECT * FROM memories WHERE chat_id = ? AND agent_id = ? AND importance >= 0.5
        ORDER BY accessed_at DESC LIMIT ?`,
     )
-    .all(chatId, limit) as Memory[];
+    .all(chatId, agentId, limit) as Memory[];
 }
 
-export function getRecentMemories(chatId: string, limit = 5): Memory[] {
+export function getRecentMemories(chatId: string, limit = 5, agentId = 'main'): Memory[] {
   return db
     .prepare(
-      'SELECT * FROM memories WHERE chat_id = ? ORDER BY accessed_at DESC LIMIT ?',
+      'SELECT * FROM memories WHERE chat_id = ? AND agent_id = ? ORDER BY accessed_at DESC LIMIT ?',
     )
-    .all(chatId, limit) as Memory[];
+    .all(chatId, agentId, limit) as Memory[];
 }
 
 export function touchMemory(id: number): void {
@@ -1323,14 +1365,14 @@ export function getRecentConversation(
       .prepare(
         `SELECT * FROM conversation_log
          WHERE chat_id = ? AND agent_id = ?
-         ORDER BY created_at DESC LIMIT ?`,
+         ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
       .all(chatId, agentId, limit) as ConversationTurn[];
   }
   return db
     .prepare(
       `SELECT * FROM conversation_log WHERE chat_id = ?
-       ORDER BY created_at DESC LIMIT ?`,
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
     )
     .all(chatId, limit) as ConversationTurn[];
 }
@@ -1382,7 +1424,17 @@ export function getConversationPage(
   chatId: string,
   limit = 40,
   beforeId?: number,
+  agentId?: string,
 ): ConversationTurn[] {
+  if (beforeId && agentId) {
+    return db
+      .prepare(
+        `SELECT * FROM conversation_log
+         WHERE chat_id = ? AND agent_id = ? AND id < ?
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(chatId, agentId, beforeId, limit) as ConversationTurn[];
+  }
   if (beforeId) {
     return db
       .prepare(
@@ -1391,6 +1443,15 @@ export function getConversationPage(
          ORDER BY id DESC LIMIT ?`,
       )
       .all(chatId, beforeId, limit) as ConversationTurn[];
+  }
+  if (agentId) {
+    return db
+      .prepare(
+        `SELECT * FROM conversation_log
+         WHERE chat_id = ? AND agent_id = ?
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(chatId, agentId, limit) as ConversationTurn[];
   }
   return db
     .prepare(
@@ -1824,7 +1885,7 @@ export function getAgentRecentConversation(agentId: string, chatId: string, limi
   return db
     .prepare(
       `SELECT * FROM conversation_log WHERE agent_id = ? AND chat_id = ?
-       ORDER BY created_at DESC LIMIT ?`,
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
     )
     .all(agentId, chatId, limit) as ConversationTurn[];
 }
@@ -1944,6 +2005,9 @@ export interface MissionTask {
   error: string | null;
   created_by: string;
   priority: number;
+  timeout_ms: number | null;
+  type: string;
+  chat_id: string | null;
   created_at: number;
   started_at: number | null;
   completed_at: number | null;
@@ -1956,24 +2020,47 @@ export function createMissionTask(
   assignedAgent: string | null = null,
   createdBy = 'dashboard',
   priority = 0,
+  timeoutMs: number | null = null,
+  type: 'async' | 'chat' = 'async',
+  chatId: string | null = null,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO mission_tasks (id, title, prompt, assigned_agent, status, created_by, priority, created_at)
-     VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)`,
-  ).run(id, title, prompt, assignedAgent, createdBy, priority, now);
+    `INSERT INTO mission_tasks (id, title, prompt, assigned_agent, status, created_by, priority, timeout_ms, type, chat_id, created_at)
+     VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
+  ).run(id, title, prompt, assignedAgent, createdBy, priority, timeoutMs, type, chatId, now);
+}
+
+export function updateMissionTaskTimeout(id: string, timeoutMs: number): boolean {
+  // Only mutate non-terminal rows. A PATCH racing against a just-completed
+  // task must not silently rewrite the timeout after the run has ended.
+  const result = db.prepare(
+    `UPDATE mission_tasks SET timeout_ms = ?
+       WHERE id = ? AND status IN ('queued', 'running')`,
+  ).run(timeoutMs, id);
+  return result.changes > 0;
 }
 
 export function getUnassignedMissionTasks(): MissionTask[] {
   return db
     .prepare(
-      `SELECT * FROM mission_tasks WHERE assigned_agent IS NULL AND status = 'queued'
+      `SELECT * FROM mission_tasks
+       WHERE assigned_agent IS NULL AND status = 'queued' AND type = 'async'
        ORDER BY priority DESC, created_at ASC`,
     )
     .all() as MissionTask[];
 }
 
-export function getMissionTasks(agentId?: string, status?: string): MissionTask[] {
+/**
+ * List mission tasks for the Mission Control UI. Chat-type tasks are the
+ * transport for dashboard per-agent chat and are excluded by default so
+ * they don't pollute the task list. Pass `includeChat: true` for debug.
+ */
+export function getMissionTasks(
+  agentId?: string,
+  status?: string,
+  includeChat = false,
+): MissionTask[] {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -1984,6 +2071,9 @@ export function getMissionTasks(agentId?: string, status?: string): MissionTask[
   if (status) {
     conditions.push('status = ?');
     params.push(status);
+  }
+  if (!includeChat) {
+    conditions.push("type = 'async'");
   }
 
   const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
@@ -2069,11 +2159,17 @@ export function assignMissionTask(id: string, agent: string): boolean {
 }
 
 export function getMissionTaskHistory(limit = 30, offset = 0): { tasks: MissionTask[]; total: number } {
+  // Exclude chat-type tasks — they're dashboard-scoped chat turns, not
+  // Mission Control work items. Showing them would pollute the history view.
   const total = (db.prepare(
-    `SELECT COUNT(*) as c FROM mission_tasks WHERE status IN ('completed', 'failed', 'cancelled')`,
+    `SELECT COUNT(*) as c FROM mission_tasks
+       WHERE status IN ('completed', 'failed', 'cancelled')
+         AND (type IS NULL OR type = 'async')`,
   ).get() as { c: number }).c;
   const tasks = db.prepare(
-    `SELECT * FROM mission_tasks WHERE status IN ('completed', 'failed', 'cancelled')
+    `SELECT * FROM mission_tasks
+       WHERE status IN ('completed', 'failed', 'cancelled')
+         AND (type IS NULL OR type = 'async')
      ORDER BY completed_at DESC LIMIT ? OFFSET ?`,
   ).all(limit, offset) as MissionTask[];
   return { tasks, total };

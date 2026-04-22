@@ -7,6 +7,11 @@ import { readEnvFile } from './env.js';
 const envConfig = readEnvFile([
   'TELEGRAM_BOT_TOKEN',
   'ALLOWED_CHAT_ID',
+  'MESSENGER_TYPE',
+  'SIGNAL_PHONE_NUMBER',
+  'SIGNAL_RPC_HOST',
+  'SIGNAL_RPC_PORT',
+  'SIGNAL_AUTHORIZED_RECIPIENTS',
   'GROQ_API_KEY',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_VOICE_ID',
@@ -20,6 +25,7 @@ const envConfig = readEnvFile([
   'DB_ENCRYPTION_KEY',
   'GOOGLE_API_KEY',
   'AGENT_TIMEOUT_MS',
+  'MISSION_TIMEOUT_MS',
   'AGENT_MAX_TURNS',
   'SECURITY_PIN_HASH',
   'IDLE_LOCK_MINUTES',
@@ -28,6 +34,7 @@ const envConfig = readEnvFile([
   'SMART_ROUTING_ENABLED',
   'SMART_ROUTING_CHEAP_MODEL',
   'SHOW_COST_FOOTER',
+  'MEMORY_NOTIFY',
   'DAILY_COST_BUDGET',
   'HOURLY_TOKEN_BUDGET',
   'MEMORY_NUDGE_INTERVAL_TURNS',
@@ -75,6 +82,29 @@ export const TELEGRAM_BOT_TOKEN =
 export const ALLOWED_CHAT_ID =
   process.env.ALLOWED_CHAT_ID || envConfig.ALLOWED_CHAT_ID || '';
 
+// ── Messenger adapter selection ──────────────────────────────────────
+// Which messenger front-end runs: 'telegram' (default, grammy via bot.ts)
+// or 'signal' (signal-cli JSON-RPC via signal-bot.ts). Picked once at
+// startup in index.ts; the two code paths never run simultaneously.
+export type MessengerType = 'telegram' | 'signal';
+export const MESSENGER_TYPE: MessengerType =
+  ((process.env.MESSENGER_TYPE || envConfig.MESSENGER_TYPE || 'telegram').toLowerCase() as MessengerType);
+
+// ── Signal (alternative messenger via signal-cli) ────────────────────
+export const SIGNAL_PHONE_NUMBER =
+  process.env.SIGNAL_PHONE_NUMBER || envConfig.SIGNAL_PHONE_NUMBER || '';
+export const SIGNAL_RPC_HOST =
+  process.env.SIGNAL_RPC_HOST || envConfig.SIGNAL_RPC_HOST || '127.0.0.1';
+export const SIGNAL_RPC_PORT = parseInt(
+  process.env.SIGNAL_RPC_PORT || envConfig.SIGNAL_RPC_PORT || '7583',
+  10,
+);
+// Comma-separated list of allowed sender numbers. Messages from anyone
+// else get dropped with a single audit entry. Usually just your own number.
+export const SIGNAL_AUTHORIZED_RECIPIENTS = (
+  process.env.SIGNAL_AUTHORIZED_RECIPIENTS || envConfig.SIGNAL_AUTHORIZED_RECIPIENTS || ''
+).split(',').map((s) => s.trim()).filter(Boolean);
+
 export const WHATSAPP_ENABLED =
   (process.env.WHATSAPP_ENABLED || envConfig.WHATSAPP_ENABLED || '').toLowerCase() === 'true';
 
@@ -93,7 +123,11 @@ const __dirname = path.dirname(__filename);
 // The SDK uses this as cwd, which causes Claude Code to load our CLAUDE.md
 // and all global skills from ~/.claude/skills/ via settingSources.
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
-export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
+// STORE_DIR can be overridden via CLAUDECLAW_STORE_DIR so tests (or other
+// isolated invocations) don't write to the live DB at store/claudeclaw.db.
+export const STORE_DIR = process.env.CLAUDECLAW_STORE_DIR
+  ? path.resolve(process.env.CLAUDECLAW_STORE_DIR)
+  : path.resolve(PROJECT_ROOT, 'store');
 
 // ── External config directory ────────────────────────────────────────
 // Personal config files (CLAUDE.md, agent.yaml, agent CLAUDE.md) can live
@@ -132,6 +166,13 @@ export const TYPING_REFRESH_MS = 4000;
 export const AGENT_TIMEOUT_MS = parseInt(
   process.env.AGENT_TIMEOUT_MS || envConfig.AGENT_TIMEOUT_MS || '900000',
   10,
+);
+
+// Mission task timeout — per-task overrides take priority, this is the global default.
+// Floor of 60 s to prevent misconfiguration.
+export const MISSION_TIMEOUT_MS = Math.max(
+  60_000,
+  parseInt(process.env.MISSION_TIMEOUT_MS || envConfig.MISSION_TIMEOUT_MS || '900000', 10),
 );
 
 // Maximum number of agentic turns (tool-use rounds) per query.
@@ -213,6 +254,11 @@ export const SMART_ROUTING_CHEAP_MODEL =
 export type CostFooterMode = 'off' | 'compact' | 'verbose' | 'cost' | 'full';
 export const SHOW_COST_FOOTER: CostFooterMode =
   (process.env.SHOW_COST_FOOTER || envConfig.SHOW_COST_FOOTER || 'compact') as CostFooterMode;
+
+// Memory notifications: send Telegram message when high-importance memories are created.
+// Set to 'off' to disable. Default: 'on'.
+export const MEMORY_NOTIFY: boolean =
+  (process.env.MEMORY_NOTIFY || envConfig.MEMORY_NOTIFY || 'on') !== 'off';
 
 // Daily cost budget in USD. Warns at 80%. Set to 0 to disable (default).
 // Only useful for API/pay-per-use users. Subscription users should leave off.
