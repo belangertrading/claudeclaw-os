@@ -303,7 +303,15 @@ async function runDueMissionTasks(): Promise<boolean> {
   return true;
 }
 
+/**
+ * Timezone used to interpret all cron expressions. Defaults to America/New_York
+ * (Belanger Trading is ET-centric — markets, sessions, alerts all reference ET).
+ * Override with SCHEDULER_TZ env var if a deployment needs a different zone.
+ * This makes cron expressions portable across servers regardless of system TZ.
+ */
+const SCHEDULER_TZ = process.env.SCHEDULER_TZ || 'America/New_York';
+
 export function computeNextRun(cronExpression: string): number {
-  const interval = CronExpressionParser.parse(cronExpression);
+  const interval = CronExpressionParser.parse(cronExpression, { tz: SCHEDULER_TZ });
   return Math.floor(interval.next().getTime() / 1000);
 }
